@@ -1,0 +1,12 @@
+.env
+PLAN.md
+data/
+venv/
+temp_images/
+markdown_output/
+logs/
+*.pyc
+__pycache__/
+markdown_output_clean/
+Дременков_МП_*
+generate_docx.py
