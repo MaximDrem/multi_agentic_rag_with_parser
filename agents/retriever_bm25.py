@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any
 
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
@@ -23,6 +23,8 @@ from common.config import (
 )
 from common.chunk_store import ChunkDatabase
 from common.a2a_server import A2AServer, A2AExecutor
+from common.benchmark_logger import sum_tokens_from_messages
+from common.logging_utils import setup_logging
 from common.models import Chunk
 from indexing.bm25_indexer import BM25Indexer
 
@@ -63,6 +65,7 @@ class BM25RetrieverAgent:
         indexer = self.indexer
 
         call_count = [0]
+        scores: dict[str, float] = {}
         MAX_CALLS = 5
 
         @tool
@@ -83,6 +86,8 @@ class BM25RetrieverAgent:
                     chunk = indexer.chunks[idx]
                     if chunk.id not in all_chunks:
                         all_chunks[chunk.id] = chunk
+                    if chunk.id not in scores or score > scores[chunk.id]:
+                        scores[chunk.id] = score
             logger.info(f"  unique chunks after dedup: {len(all_chunks)}")
             if not all_chunks:
                 return f"По '{keywords}' ничего не найдено. Попробуй другие формулировки."
@@ -97,10 +102,10 @@ class BM25RetrieverAgent:
                 )
             return "\n---\n".join(lines)
 
-        agent = create_react_agent(
+        agent = create_agent(
             self.llm,
             [search],
-            prompt=SystemMessage(content=SYSTEM_PROMPT),
+            system_prompt=SystemMessage(content=SYSTEM_PROMPT),
         )
 
         logger.info("→ LLM: invoking ReAct agent for search planning")
@@ -122,11 +127,12 @@ class BM25RetrieverAgent:
             elif content:
                 logger.info(f"  BM25 LLM msg[{i}] {mtype}:\n{content}")
 
-        result = self._extract_chunks(messages)
+        result = self._extract_chunks(messages, scores)
+        result["token_usage"] = {"total_tokens": sum_tokens_from_messages(messages)}
         logger.info(f"BM25 final: {len(result['chunks'])} chunks extracted")
         return result
 
-    def _extract_chunks(self, messages: list) -> dict:
+    def _extract_chunks(self, messages: list, scores: dict[str, float]) -> dict:
         seen: set[str] = set()
         chunks: list[dict] = []
 
@@ -147,6 +153,7 @@ class BM25RetrieverAgent:
                                     "title": chunk.title,
                                     "text": chunk.text,
                                     "token_count": chunk.token_count,
+                                    "score": scores.get(cid),
                                 })
         return {"chunks": chunks[:10], "retriever": "bm25"}
 
@@ -212,7 +219,7 @@ def create_server():
 
 if __name__ == "__main__":
     import uvicorn
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+    setup_logging("retriever_bm25")
     agent = create_server()
     logger.info(f"Starting {agent.name} on port {RETRIEVER_BM25_PORT}")
-    uvicorn.run(agent.app, host="0.0.0.0", port=RETRIEVER_BM25_PORT)
+    uvicorn.run(agent.app, host="0.0.0.0", port=RETRIEVER_BM25_PORT, log_config=None)

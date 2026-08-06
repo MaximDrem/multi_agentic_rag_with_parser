@@ -10,17 +10,17 @@ mkdir -p "$LOG_DIR"
 echo "Starting A2A agents..."
 
 # Start sub-agents first
-$PYTHON -m agents.retriever_embedding > "$LOG_DIR/retriever_embedding.log" 2>&1 &
+$PYTHON -m agents.retriever_embedding > /dev/null 2>&1 &
 PID_EMB=$!
 
-$PYTHON -m agents.retriever_bm25 > "$LOG_DIR/retriever_bm25.log" 2>&1 &
+$PYTHON -m agents.retriever_bm25 > /dev/null 2>&1 &
 PID_BM25=$!
 
-$PYTHON -m agents.summarizer > "$LOG_DIR/summarizer.log" 2>&1 &
+$PYTHON -m agents.summarizer > /dev/null 2>&1 &
 PID_SUM=$!
 
 # Start orchestrator
-$PYTHON main.py > "$LOG_DIR/orchestrator.log" 2>&1 &
+$PYTHON main.py > /dev/null 2>&1 &
 PID_ORCH=$!
 
 echo "Agents started:"

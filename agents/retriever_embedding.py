@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any
 
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
@@ -23,6 +23,8 @@ from common.config import (
 )
 from common.chunk_store import ChunkDatabase
 from common.a2a_server import A2AServer, A2AExecutor
+from common.benchmark_logger import sum_tokens_from_messages
+from common.logging_utils import setup_logging
 from indexing.faiss_indexer import FaissIndexer
 
 logger = logging.getLogger(__name__)
@@ -67,6 +69,7 @@ class EmbeddingRetrieverAgent:
         db = self.db
 
         call_count = [0]
+        scores: dict[str, float] = {}
         MAX_CALLS = 5
 
         @tool
@@ -87,6 +90,8 @@ class EmbeddingRetrieverAgent:
                     chunk = db.chunks[idx]
                     if chunk.id not in all_chunks:
                         all_chunks[chunk.id] = chunk
+                    if chunk.id not in scores or score > scores[chunk.id]:
+                        scores[chunk.id] = score
             logger.info(f"  unique chunks after dedup: {len(all_chunks)}")
             if not all_chunks:
                 return f"По '{keywords}' ничего не найдено. Попробуй другие формулировки."
@@ -101,10 +106,10 @@ class EmbeddingRetrieverAgent:
                 )
             return "\n---\n".join(lines)
 
-        agent = create_react_agent(
+        agent = create_agent(
             self.llm,
             [search],
-            prompt=SystemMessage(content=SYSTEM_PROMPT),
+            system_prompt=SystemMessage(content=SYSTEM_PROMPT),
         )
 
         logger.info("→ LLM: invoking ReAct agent for search planning")
@@ -126,11 +131,12 @@ class EmbeddingRetrieverAgent:
             elif content:
                 logger.info(f"  EMB LLM msg[{i}] {mtype}:\n{content}")
 
-        result = self._extract_chunks(messages)
+        result = self._extract_chunks(messages, scores)
+        result["token_usage"] = {"total_tokens": sum_tokens_from_messages(messages)}
         logger.info(f"EMB final: {len(result['chunks'])} chunks extracted")
         return result
 
-    def _extract_chunks(self, messages: list) -> dict:
+    def _extract_chunks(self, messages: list, scores: dict[str, float]) -> dict:
         seen: set[str] = set()
         chunks: list[dict] = []
 
@@ -150,6 +156,7 @@ class EmbeddingRetrieverAgent:
                                     "title": chunk.title,
                                     "text": chunk.text,
                                     "token_count": chunk.token_count,
+                                    "score": scores.get(cid),
                                 })
         return {"chunks": chunks[:10], "retriever": "embedding"}
 
@@ -209,7 +216,7 @@ def create_server():
 
 if __name__ == "__main__":
     import uvicorn
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+    setup_logging("retriever_embedding")
     agent = create_server()
     logger.info(f"Starting {agent.name} on port {RETRIEVER_EMB_PORT}")
-    uvicorn.run(agent.app, host="0.0.0.0", port=RETRIEVER_EMB_PORT)
+    uvicorn.run(agent.app, host="0.0.0.0", port=RETRIEVER_EMB_PORT, log_config=None)

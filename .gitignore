@@ -10,3 +10,6 @@ __pycache__/
 markdown_output_clean/
 Дременков_МП_*
 generate_docx.py
+logs_benchmark/
+AGENTS.md
+*.ipynb

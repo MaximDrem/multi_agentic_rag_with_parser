@@ -21,6 +21,8 @@ from common.config import (
 )
 from common.chunk_store import ChunkDatabase
 from common.a2a_server import A2AServer, A2AExecutor
+from common.benchmark_logger import tokens_from_usage_metadata
+from common.logging_utils import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +92,12 @@ class SummarizerAgent:
 
         if not enriched:
             logger.info("  no chunks → returning empty answer")
-            return {"answer": "Не найдено релевантных документов для ответа на вопрос.", "sources": [], "chunks_used": []}
+            return {
+                "answer": "Не найдено релевантных документов для ответа на вопрос.",
+                "sources": [],
+                "chunks_used": [],
+                "token_usage": {"total_tokens": 0},
+            }
 
         context_texts = []
         sources = []
@@ -126,6 +133,7 @@ class SummarizerAgent:
             "answer": answer,
             "sources": sources,
             "chunks_used": [c["chunk_id"] for c in enriched],
+            "token_usage": {"total_tokens": tokens_from_usage_metadata(getattr(response, "usage_metadata", None))},
         }
 
 
@@ -186,7 +194,7 @@ def create_server():
 
 if __name__ == "__main__":
     import uvicorn
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+    setup_logging("summarizer")
     agent = create_server()
     logger.info(f"Starting {agent.name} on port {SUMMARIZER_PORT}")
-    uvicorn.run(agent.app, host="0.0.0.0", port=SUMMARIZER_PORT)
+    uvicorn.run(agent.app, host="0.0.0.0", port=SUMMARIZER_PORT, log_config=None)

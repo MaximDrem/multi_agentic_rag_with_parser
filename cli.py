@@ -239,11 +239,10 @@ def start_agents():
     print("\nStarting agents...")
     for name, port, module in procs_def:
         log_path = LOG_DIR / f"{name}.log"
-        log_fh = open(log_path, "w")
         proc = subprocess.Popen(
             [VENV_PYTHON, "-m", module],
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         _agent_procs[name] = proc
         print(f"  {name}: PID={proc.pid}  port={port}  log={log_path}")

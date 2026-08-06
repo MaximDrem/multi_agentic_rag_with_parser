@@ -15,12 +15,10 @@ from a2a.types import AgentSkill
 
 from common.config import ORCHESTRATOR_PORT, ORCHESTRATOR_URL
 from common.a2a_server import A2AServer, A2AExecutor
+from common.logging_utils import setup_logging
 from orchestrator.orchestrator import OrchestratorAgent
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
+setup_logging("orchestrator")
 logger = logging.getLogger("main")
 
 
@@ -61,7 +59,9 @@ def main():
     logger.info(f"Agent card: {ORCHESTRATOR_URL}/.well-known/agent-card.json")
 
     agent, orch_instance = orch
-    config = uvicorn.Config(agent.app, host="0.0.0.0", port=args.port, log_level="info")
+    config = uvicorn.Config(
+        agent.app, host="0.0.0.0", port=args.port, log_level="info", log_config=None,
+    )
     server = uvicorn.Server(config)
 
     def shutdown(sig, frame):

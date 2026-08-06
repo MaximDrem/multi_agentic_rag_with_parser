@@ -1,8 +1,10 @@
 import json
 import logging
+import time
 from typing import Any
 
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
@@ -17,13 +19,39 @@ from common.config import (
     ORCHESTRATOR_LLM_TEMPERATURE,
     ORCHESTRATOR_LLM_MAX_TOKENS,
     ORCHESTRATOR_ENABLE_THINKING,
+    SUMMARIZER_LLM_MODEL,
     create_llm,
     get_reasoning,
 )
 from common.a2a_client import A2AClientManager
+from common.benchmark_logger import (
+    BenchmarkLogger,
+    next_request_id,
+    sum_tokens_from_messages,
+    tokens_from_usage_metadata,
+)
 from orchestrator.discovery import AgentRegistry, AgentDiscoverer, TaskTracker
 
 logger = logging.getLogger(__name__)
+
+_MAX_ITERATIONS = 5
+
+
+class _IterationCounterMiddleware(AgentMiddleware):
+    """Увеличивает счётчик итераций после каждого LLM-шага, вызвавшего инструменты."""
+
+    def __init__(self, orchestrator: "OrchestratorAgent"):
+        self._orchestrator = orchestrator
+
+    async def awrap_model_call(self, request, handler):
+        response = await handler(request)
+        try:
+            ai_msg = response.result[0] if response.result else None
+            if ai_msg is not None and getattr(ai_msg, "tool_calls", None):
+                self._orchestrator._on_iteration_start()
+        except Exception:
+            logger.warning("Failed to count benchmark iteration", exc_info=True)
+        return response
 
 _DYNAMIC_PROMPT_TEMPLATE = (
     "Ты — оркестратор. Твоя задача — построить цепочку агентов от запроса пользователя до финального ответа. "
@@ -80,6 +108,14 @@ class OrchestratorAgent:
         self._stream_ctx_id: str = ""
         self._stream_seq: int = 0
         self._text_seq: int = 0
+
+        self._benchmark: BenchmarkLogger | None = None
+        self._started_at: float | None = None
+        self._iteration: int = 0
+        self._retrieval_iterations: int = 0
+        self._last_retrieval_iteration: int | None = None
+        self._unique_before_last_retrieval: int = 0
+        self._decided_iterations: set[int] = set()
 
     async def initialize(self) -> None:
         if self._initialized:
@@ -164,9 +200,10 @@ class OrchestratorAgent:
             logger.info(f"Tool '{safe_name}' → {agent_url}")
 
         system_prompt = self._build_prompt()
-        self._agent = create_react_agent(
+        self._agent = create_agent(
             self.llm, tools,
-            prompt=SystemMessage(content=system_prompt),
+            system_prompt=SystemMessage(content=system_prompt),
+            middleware=(_IterationCounterMiddleware(self),),
         )
         logger.info(f"Orchestrator built with {len(tools)} tool(s)")
 
@@ -203,9 +240,73 @@ class OrchestratorAgent:
         if self._session_tracker:
             self._session_tracker.record(task_id, new_context_id, url, artifacts, safe_name)
 
+        self._log_benchmark_call(url, safe_name, artifacts, data_payload)
+
         result = self._build_metadata_result(safe_name, artifacts)
         logger.info(f"← {safe_name} result: {result}")
         return result
+
+    def _on_iteration_start(self) -> None:
+        self._iteration += 1
+
+    def _agent_tags(self, url: str) -> list[str]:
+        card = self.registry.cards.get(url.rstrip("/"))
+        if card and card.skills:
+            return card.skills[0].tags or []
+        return []
+
+    def _is_retriever_agent(self, url: str) -> bool:
+        tags = self._agent_tags(url)
+        return "shared-corpus" in tags or "retrieval" in tags or "intermediate" in tags
+
+    def _is_final_agent(self, url: str) -> bool:
+        return "final" in self._agent_tags(url)
+
+    def _log_benchmark_call(self, url: str, safe_name: str, artifacts: list[dict], data_payload: dict) -> None:
+        if self._benchmark is None:
+            return
+        chunks = A2AClientManager.extract_chunks_from_artifacts(artifacts)
+
+        if chunks and self._is_retriever_agent(url):
+            if (
+                self._last_retrieval_iteration is not None
+                and self._last_retrieval_iteration != self._iteration
+                and self._last_retrieval_iteration not in self._decided_iterations
+            ):
+                grew = self._benchmark.unique_chunk_count > self._unique_before_last_retrieval
+                self._log_retrieval_decision(
+                    "continue", "more_chunks_needed" if grew else "no_new_chunks"
+                )
+            self._unique_before_last_retrieval = self._benchmark.unique_chunk_count
+            self._benchmark.log_chunks(
+                iteration=self._iteration,
+                source_agent=safe_name,
+                chunks=chunks,
+            )
+            self._last_retrieval_iteration = self._iteration
+            self._retrieval_iterations = max(self._retrieval_iterations, self._iteration)
+
+        if self._is_final_agent(url) and data_payload.get("chunks"):
+            self._benchmark.log_final_selection(data_payload["chunks"])
+            if (
+                self._last_retrieval_iteration is not None
+                and self._last_retrieval_iteration not in self._decided_iterations
+            ):
+                self._log_retrieval_decision("stop", "enough_context")
+
+    def _log_retrieval_decision(self, decision: str, reason: str = "") -> None:
+        if self._benchmark is None or self._last_retrieval_iteration is None:
+            return
+        iteration = self._last_retrieval_iteration
+        if iteration in self._decided_iterations:
+            return
+        self._decided_iterations.add(iteration)
+        self._benchmark.log_decision(
+            iteration,
+            unique_chunks_so_far=self._benchmark.unique_chunk_count,
+            decision=decision,
+            reason=reason,
+        )
 
     async def _forward_agent_artifacts(self, agent_name: str) -> str:
         safe_name = self._safe_name(agent_name)
@@ -289,6 +390,20 @@ class OrchestratorAgent:
             self._session_context_id = context_id
         logger.info(f"=== ORCHESTRATOR QUERY: {query[:100]} ===")
 
+        self._started_at = time.monotonic()
+        self._iteration = 0
+        self._retrieval_iterations = 0
+        self._last_retrieval_iteration = None
+        self._unique_before_last_retrieval = 0
+        self._decided_iterations = set()
+        question_id = str(user_data.get("question_id", "")) if isinstance(user_data, dict) else ""
+        self._benchmark = BenchmarkLogger(
+            request_id=next_request_id(),
+            question_id=question_id,
+            question=query,
+            pipeline_type="agent",
+        )
+
         try:
             logger.info("→ LLM: invoking ReAct agent")
             result = await self._agent.ainvoke({"messages": [HumanMessage(content=query)]})
@@ -322,10 +437,51 @@ class OrchestratorAgent:
                 self._text_seq += 1
                 last_artifacts = [{"artifactId": f"llm_answer_{self._text_seq}", "data": {"answer": text}, "name": "llm_answer"}]
 
+            self._finalize_benchmark(last_artifacts, messages)
             return {"status": "completed", "message": "Completed", "artifacts": last_artifacts}
         except Exception as e:
             logger.exception("Orchestrator failed")
+            self._finalize_benchmark([], [])
             return {"status": "failed", "message": str(e), "artifacts": []}
+
+    def _finalize_benchmark(self, last_artifacts: list[dict], messages: list) -> None:
+        if self._benchmark is None:
+            return
+        if (
+            self._last_retrieval_iteration is not None
+            and self._last_retrieval_iteration not in self._decided_iterations
+        ):
+            reason = "max_iterations_reached" if self._iteration >= _MAX_ITERATIONS else "loop_ended"
+            self._log_retrieval_decision("stop", reason)
+        final_answer = OrchestratorAgent._extract_final_answer(last_artifacts)
+        if not final_answer:
+            final_answer = OrchestratorAgent._extract_final_answer(self._outbox)
+        total_tokens = self._benchmark_tokens(messages)
+        self._benchmark.finalize_request(
+            iterations_done=self._retrieval_iterations,
+            total_chunks_collected=self._benchmark.unique_chunk_count,
+            final_answer=final_answer,
+            total_latency_ms=int((time.monotonic() - self._started_at) * 1000) if self._started_at else 0,
+            total_tokens=total_tokens,
+            generator_model=SUMMARIZER_LLM_MODEL,
+        )
+        self._benchmark = None
+
+    def _benchmark_tokens(self, messages: list) -> int:
+        total = sum_tokens_from_messages(messages)
+        if self._session_tracker:
+            for entry in self._session_tracker.tasks.values():
+                for d in A2AClientManager.extract_artifact_data(entry["artifact_dicts"]):
+                    total += tokens_from_usage_metadata(d.get("token_usage"))
+        return total
+
+    @staticmethod
+    def _extract_final_answer(artifacts: list[dict]) -> str:
+        for art in reversed(artifacts):
+            data = art.get("data", {})
+            if isinstance(data, dict) and data.get("answer"):
+                return str(data["answer"])
+        return ""
 
     @staticmethod
     def _task_artifacts_to_response(artifact_dicts: list[dict]) -> list[dict]:
