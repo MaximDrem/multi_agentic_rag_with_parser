@@ -11,7 +11,7 @@ import time
 import uuid
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -32,17 +32,17 @@ AGENT_PORTS = {
 }
 
 INDEX_FILES = [
-    Path(os.getenv("CHUNKS_PATH", "./data/chunks.pkl")),
-    Path(os.getenv("BM25_INDEX_PATH", "./data/bm25_index.pkl")),
-    Path(os.getenv("FAISS_INDEX_PATH", "./data/faiss_index/index.faiss")),
+    Path(os.getenv("CHUNKS_PATH", "./var/data/chunks.pkl")),
+    Path(os.getenv("BM25_INDEX_PATH", "./var/data/bm25_index.pkl")),
+    Path(os.getenv("FAISS_INDEX_PATH", "./var/data/faiss_index/index.faiss")),
 ]
 
 VENV_PYTHON = str(Path(__file__).parent / "venv" / "bin" / "python")
-LOG_DIR = Path(__file__).parent / "logs"
+LOG_DIR = Path(__file__).parent / "var" / "logs"
 
 PROJECT_ROOT = Path(__file__).parent
-PARSER_OUTPUT_DIR = Path(os.getenv("PARSER_OUTPUT_DIR", str(PROJECT_ROOT / "markdown_output")))
-PARSER_CLEAN_OUTPUT_DIR = Path(os.getenv("PARSER_CLEAN_OUTPUT_DIR", str(PROJECT_ROOT / "markdown_output_clean")))
+PARSER_OUTPUT_DIR = Path(os.getenv("PARSER_OUTPUT_DIR", str(PROJECT_ROOT / "var" / "markdown_output")))
+PARSER_CLEAN_OUTPUT_DIR = Path(os.getenv("PARSER_CLEAN_OUTPUT_DIR", str(PROJECT_ROOT / "var" / "markdown_output_clean")))
 
 _agent_procs: dict[str, subprocess.Popen] = {}
 
@@ -236,6 +236,8 @@ def start_agents():
         ("orchestrator", ORCHESTRATOR_PORT, "main"),
     ]
 
+    sub_env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")}
+
     print("\nStarting agents...")
     for name, port, module in procs_def:
         log_path = LOG_DIR / f"{name}.log"
@@ -243,6 +245,8 @@ def start_agents():
             [VENV_PYTHON, "-m", module],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            cwd=str(PROJECT_ROOT),
+            env=sub_env,
         )
         _agent_procs[name] = proc
         print(f"  {name}: PID={proc.pid}  port={port}  log={log_path}")

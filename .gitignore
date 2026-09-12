@@ -1,15 +1,10 @@
 .env
 PLAN.md
-data/
 venv/
-temp_images/
-markdown_output/
-logs/
+var/
 *.pyc
 __pycache__/
-markdown_output_clean/
 Дременков_МП_*
 generate_docx.py
-logs_benchmark/
 AGENTS.md
 *.ipynb

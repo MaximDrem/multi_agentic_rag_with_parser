@@ -11,11 +11,11 @@
 ```
 НПА для НИР/ (документы)
     ↓ Парсинг (опция 1)
-markdown_output/ (сырые .md)
+var/markdown_output/ (сырые .md)
     ↓ Очистка
-markdown_output_clean/ (очищенные .md)
+var/markdown_output_clean/ (очищенные .md)
     ↓ Индексация (опция 2)
-data/ (FAISS + BM25 + chunks.pkl)
+var/data/ (FAISS + BM25 + chunks.pkl)
     ↓ RAG (опции 3-4)
 Пользователь
     ↕ A2A (JSON-RPC + streaming TaskArtifactUpdateEvent)
@@ -40,44 +40,52 @@ Retriever-Embedding      Retriever-BM25
 ```
 .
 ├── cli.py                          # Интерактивный CLI: парсинг, индексация, агенты, запросы
-├── main.py                         # entrypoint оркестратора
-├── .env                            # ВСЕ параметры (RAG + Parser + OCR), без defaults в коде
+├── README.md
 ├── requirements.txt
-├── parser/                         # Парсер DOCX/PDF/XLSX → Markdown
-│   ├── config.py                   # Конфиг OCR (только из .env)
-│   ├── parser.py                   # Оркестратор парсинга
-│   ├── ocr_client.py               # OCR через vLLM
-│   ├── docx_handler.py             # DOCX → Markdown (python-docx)
-│   ├── pdf_handler.py              # PDF → Markdown (pymupdf + OCR)
-│   ├── xlsx_handler.py             # XLSX → Markdown (openpyxl)
-│   ├── omml_to_latex.py            # OMML-формулы → LaTeX
-│   ├── markdown_cleaner.py         # Очистка inline
-│   └── clean_markdown.py           # Пост-обработка: markdown_output → markdown_output_clean
-├── common/                         # RAG: общая инфраструктура
-│   ├── config.py                   # Читает .env (os.environ, без defaults)
-│   ├── a2a_server.py               # A2AServer + A2AExecutor (v1.0)
-│   ├── a2a_client.py               # A2AClientManager (v1.0)
-│   ├── models.py                   # Chunk
-│   └── chunk_store.py              # ChunkDatabase
-├── indexing/                       # RAG: индексация
-│   ├── chunker.py                  # Markdown → chunks
-│   ├── faiss_indexer.py            # FAISS IndexFlatIP + Jina v5
-│   └── bm25_indexer.py             # BM25Okapi
-├── agents/                         # RAG: агенты
-│   ├── retriever_embedding.py      # LangGraph ReAct + FAISS
-│   ├── retriever_bm25.py           # LangGraph ReAct + BM25
-│   └── summarizer.py               # LLM-генерация ответа
-├── orchestrator/                   # RAG: оркестрация
-│   ├── orchestrator.py             # ReAct-оркестратор, динамически строит цепочку
-│   └── discovery.py                # AgentDiscoverer + AgentRegistry
-├── scripts/                        # Утилиты
-│   ├── build_indices.py
-│   ├── start_agents.sh
-│   └── test_e2e.py
-├── НПА для НИР/                     # Вход: исходные документы
-├── markdown_output/                 # Выход парсинга (сырые .md)
-├── markdown_output_clean/           # Очищенные .md для RAG
-└── temp_images/                     # Временные изображения OCR
+├── .env                            # ВСЕ параметры (RAG + Parser + OCR), без defaults в коде
+├── src/
+│   ├── main.py                     # entrypoint оркестратора (python -m main)
+│   ├── parser/                     # Парсер DOCX/PDF/XLSX → Markdown
+│   │   ├── config.py               # Конфиг OCR (только из .env)
+│   │   ├── parser.py               # Оркестратор парсинга
+│   │   ├── ocr_client.py           # OCR через vLLM
+│   │   ├── docx_handler.py         # DOCX → Markdown (python-docx)
+│   │   ├── pdf_handler.py          # PDF → Markdown (pymupdf + OCR)
+│   │   ├── xlsx_handler.py         # XLSX → Markdown (openpyxl)
+│   │   ├── omml_to_latex.py        # OMML-формулы → LaTeX
+│   │   ├── markdown_cleaner.py     # Очистка inline
+│   │   └── clean_markdown.py       # Пост-обработка: var/markdown_output → var/markdown_output_clean
+│   ├── common/                     # RAG: общая инфраструктура
+│   │   ├── config.py               # Читает .env (os.environ, без defaults)
+│   │   ├── a2a_server.py           # A2AServer + A2AExecutor (v1.0)
+│   │   ├── a2a_client.py           # A2AClientManager (v1.0)
+│   │   ├── models.py               # Chunk
+│   │   ├── chunk_store.py          # ChunkDatabase
+│   │   ├── logging_utils.py        # Онлайн-логи → var/logs/
+│   │   └── benchmark_logger.py     # Бенчмарк-логи → var/logs_benchmark/
+│   ├── indexing/                   # RAG: индексация
+│   │   ├── chunker.py              # Markdown → chunks
+│   │   ├── faiss_indexer.py        # FAISS IndexFlatIP + Jina v5
+│   │   └── bm25_indexer.py         # BM25Okapi
+│   ├── agents/                     # RAG: агенты
+│   │   ├── retriever_embedding.py  # LangGraph ReAct + FAISS
+│   │   ├── retriever_bm25.py       # LangGraph ReAct + BM25
+│   │   └── summarizer.py           # LLM-генерация ответа
+│   ├── orchestrator/               # RAG: оркестрация
+│   │   ├── orchestrator.py         # ReAct-оркестратор, динамически строит цепочку
+│   │   └── discovery.py            # AgentDiscoverer + AgentRegistry
+│   └── scripts/                    # Утилиты
+│       ├── build_indices.py
+│       ├── start_agents.sh
+│       └── test_e2e.py
+├── НПА для НИР/                     # Вход: исходные документы (tracked)
+└── var/                             # Всё генерируемое (gitignored)
+    ├── markdown_output/             # Сырые .md после парсинга
+    ├── markdown_output_clean/       # Очищенные .md для RAG
+    ├── temp_images/                 # Временные изображения OCR
+    ├── data/                        # Индексы: chunks.pkl, faiss_index/, bm25_index.pkl
+    ├── logs/                        # Онлайн-логи процессов
+    └── logs_benchmark/              # Бенчмарк-логи (experiment_*/)
 ```
 
 ## Установка
@@ -174,7 +182,7 @@ pip install -r requirements.txt
 
 Оркестратор при `initialize()` читает AgentCard каждого URL, динамически создаёт LangChain-тулы из скиллов и форматирует промпт для LLM с описаниями всех агентов. При изменении состава агентов (rediscovery) инструменты перестраиваются автоматически без перезапуска.
 
-## CLI (python cli.py)
+## CLI (venv/bin/python cli.py)
 
 ```
 ============================================================
@@ -205,7 +213,7 @@ pip install -r requirements.txt
 
 ### 3. Запуск агентов
 
-Orchestrator + Retriever-Embedding + Retriever-BM25 + Summarizer — каждый независимый FastAPI + uvicorn процесс. Логи в `logs/`.
+Orchestrator + Retriever-Embedding + Retriever-BM25 + Summarizer — каждый независимый FastAPI + uvicorn процесс. Логи в `var/logs/`.
 
 ### 4. Запрос
 
@@ -223,13 +231,14 @@ Orchestrator + Retriever-Embedding + Retriever-BM25 + Summarizer — кажды�
 
 ```bash
 # Интерактивный режим
-python cli.py
+venv/bin/python cli.py
 
-# Или отдельно:
-venv/bin/python -m parser.parser          # только парсинг
-venv/bin/python -m parser.clean_markdown  # только очистка
-venv/bin/python scripts/build_indices.py  # только индексация
-bash scripts/start_agents.sh              # запуск всех агентов
+# Или отдельно (из корня репозитория; PYTHONPATH=src обязателен для -m запусков):
+PYTHONPATH=src venv/bin/python -m parser.parser                        # только парсинг
+PYTHONPATH=src venv/bin/python -m parser.clean_markdown               # только очистка
+PYTHONPATH=src venv/bin/python src/scripts/build_indices.py           # только индексация
+bash src/scripts/start_agents.sh                                      # запуск всех агентов
+PYTHONPATH=src venv/bin/python src/scripts/test_e2e.py                # E2E тест
 
 # Прямой A2A-запрос к оркестратору (JSON-RPC v1.0)
 curl -X POST "$ORCHESTRATOR_URL/" \

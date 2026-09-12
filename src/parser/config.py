@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
 
 
@@ -23,6 +23,6 @@ def load_ocr_config() -> dict:
 
 
 INPUT_DIR = os.getenv("PARSER_INPUT_DIR", str(PROJECT_ROOT / "НПА для НИР"))
-OUTPUT_DIR = os.getenv("PARSER_OUTPUT_DIR", str(PROJECT_ROOT / "markdown_output"))
-CLEAN_OUTPUT_DIR = os.getenv("PARSER_CLEAN_OUTPUT_DIR", str(PROJECT_ROOT / "markdown_output_clean"))
-TEMP_DIR = os.getenv("PARSER_TEMP_DIR", str(PROJECT_ROOT / "temp_images"))
+OUTPUT_DIR = os.getenv("PARSER_OUTPUT_DIR", str(PROJECT_ROOT / "var" / "markdown_output"))
+CLEAN_OUTPUT_DIR = os.getenv("PARSER_CLEAN_OUTPUT_DIR", str(PROJECT_ROOT / "var" / "markdown_output_clean"))
+TEMP_DIR = os.getenv("PARSER_TEMP_DIR", str(PROJECT_ROOT / "var" / "temp_images"))

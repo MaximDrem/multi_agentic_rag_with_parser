@@ -2,7 +2,7 @@
 """Entry point for the A2A multi-agent RAG system (A2A v1.0 compliant).
 
 Starts the orchestrator agent server. Sub-agents (retrievers, summarizer)
-should be started separately via scripts/start_agents.sh.
+should be started separately via src/scripts/start_agents.sh.
 """
 import argparse
 import asyncio

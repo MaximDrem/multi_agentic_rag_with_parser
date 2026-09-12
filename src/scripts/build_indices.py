@@ -2,7 +2,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from dotenv import load_dotenv
 
@@ -16,12 +16,12 @@ load_dotenv()
 
 
 def main():
-    markdown_dir = Path(os.getenv("MARKDOWN_DIR", "./markdown_output_clean"))
-    chunks_path = Path(os.getenv("CHUNKS_PATH", "./data/chunks.pkl"))
-    faiss_path = Path(os.getenv("FAISS_INDEX_PATH", "./data/faiss_index"))
+    markdown_dir = Path(os.getenv("MARKDOWN_DIR", "./var/markdown_output_clean"))
+    chunks_path = Path(os.getenv("CHUNKS_PATH", "./var/data/chunks.pkl"))
+    faiss_path = Path(os.getenv("FAISS_INDEX_PATH", "./var/data/faiss_index"))
     if faiss_path.is_dir() or str(faiss_path).endswith("/"):
         faiss_path = faiss_path / "index.faiss"
-    bm25_path = Path(os.getenv("BM25_INDEX_PATH", "./data/bm25_index.pkl"))
+    bm25_path = Path(os.getenv("BM25_INDEX_PATH", "./var/data/bm25_index.pkl"))
 
     print(f"Chunking markdown files from {markdown_dir} ...")
     chunks = chunk_directory(markdown_dir)

@@ -8,7 +8,7 @@
 import logging
 from pathlib import Path
 
-LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOGS_DIR = Path(__file__).resolve().parents[2] / "var" / "logs"
 _FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
 
 

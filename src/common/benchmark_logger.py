@@ -16,7 +16,7 @@ from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
 
-LOGS_DIR = Path(__file__).resolve().parent.parent / "logs_benchmark"
+LOGS_DIR = Path(__file__).resolve().parents[2] / "var" / "logs_benchmark"
 
 REQUESTS_CSV_FIELDS = [
     "request_id",

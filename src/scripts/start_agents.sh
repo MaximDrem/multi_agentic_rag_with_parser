@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 PYTHON="./venv/bin/python"
-LOG_DIR="./logs"
+export PYTHONPATH="./src"
+LOG_DIR="./var/logs"
 mkdir -p "$LOG_DIR"
 
 echo "Starting A2A agents..."
@@ -20,7 +21,7 @@ $PYTHON -m agents.summarizer > /dev/null 2>&1 &
 PID_SUM=$!
 
 # Start orchestrator
-$PYTHON main.py > /dev/null 2>&1 &
+$PYTHON -m main > /dev/null 2>&1 &
 PID_ORCH=$!
 
 echo "Agents started:"
