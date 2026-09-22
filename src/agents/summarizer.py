@@ -54,8 +54,13 @@ class SummarizerAgent:
         )
         logger.info(f"Summarizer ready, {len(self.db.chunks)} chunks in DB")
 
-    def _enrich_chunks(self, chunks_data: list[dict]) -> list:
-        enriched = []
+    def _dedup_chunks(self, chunks_data: list[dict]) -> list:
+        """Дедупликация входного отбора по chunk_id без обогащения соседями.
+
+        Авторитетный текст — из ChunkDatabase.get_by_id, fallback — входной dict
+        (паритет с baseline: контекст генератора = логированный отбор 1:1).
+        """
+        deduped = []
         seen = set()
         for cd in chunks_data:
             cid = cd.get("chunk_id")
@@ -64,31 +69,29 @@ class SummarizerAgent:
             seen.add(cid)
             chunk = self.db.get_by_id(cid)
             if chunk:
-                enriched.append({
+                deduped.append({
                     "chunk_id": chunk.id,
                     "doc_path": chunk.doc_path,
                     "title": chunk.title,
                     "text": chunk.text,
                     "token_count": chunk.token_count,
                 })
-                for nb in self.db.get_neighbors_recursive(cid, depth=1):
-                    if nb.id not in seen:
-                        seen.add(nb.id)
-                        enriched.append({
-                            "chunk_id": nb.id,
-                            "doc_path": nb.doc_path,
-                            "title": nb.title,
-                            "text": nb.text,
-                            "token_count": nb.token_count,
-                        })
-        return enriched
+            else:
+                deduped.append({
+                    "chunk_id": cid,
+                    "doc_path": cd.get("doc_path", ""),
+                    "title": cd.get("title", ""),
+                    "text": cd.get("text", ""),
+                    "token_count": cd.get("token_count", 0),
+                })
+        return deduped
 
     async def run(self, query: str, chunks: list[dict]) -> dict:
         logger.info(f"=== SUMMARIZER: query={query[:80]}, chunks={len(chunks)} ===")
-        enriched = self._enrich_chunks(chunks)
+        enriched = self._dedup_chunks(chunks)
         if len(enriched) > MAX_CONTEXT_CHUNKS:
             enriched = enriched[:MAX_CONTEXT_CHUNKS]
-        logger.info(f"  enriched to {len(enriched)} chunks")
+        logger.info(f"  context chunks: {len(enriched)} (no neighbor enrichment)")
 
         if not enriched:
             logger.info("  no chunks → returning empty answer")

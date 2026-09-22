@@ -7,7 +7,9 @@ import sys
 import time
 import uuid
 
-from a2a.client import create_client, Client
+import httpx
+
+from a2a.client import create_client, Client, ClientConfig
 from a2a.types import (
     Message,
     Part,
@@ -16,6 +18,9 @@ from a2a.types import (
     SendMessageConfiguration,
     StreamResponse,
 )
+
+sys.path.insert(0, __file__.rsplit("/src/", 1)[0] + "/src")
+from common.config import A2A_VERSION, REQUEST_TIMEOUT  # noqa: E402
 
 
 ORCH_URL = "http://localhost:8101"
@@ -92,7 +97,11 @@ async def run_query(client: Client, query_text: str) -> list[StreamResponse]:
 
 
 async def test_all():
-    client = await create_client(ORCH_URL)
+    http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(REQUEST_TIMEOUT),
+        headers={"A2A-Version": A2A_VERSION},
+    )
+    client = await create_client(ORCH_URL, client_config=ClientConfig(httpx_client=http_client))
     all_passed = True
 
     try:
@@ -129,6 +138,7 @@ async def test_all():
 
     finally:
         await client.close()
+        await http_client.aclose()
 
     print("\n" + "=" * 60)
     if all_passed:

@@ -116,3 +116,11 @@ REQUEST_TIMEOUT = float(os.environ["REQUEST_TIMEOUT"])
 TASK_POLL_INTERVAL = float(os.environ["TASK_POLL_INTERVAL"])
 
 MARKDOWN_DIR = os.environ["MARKDOWN_DIR"]
+
+# ── Baseline RAG (hybrid RRF + rerank) ───────────────
+RERANKER_MODEL = os.environ["RERANKER_MODEL"]
+RERANKER_DEVICE = os.environ["RERANKER_DEVICE"]
+RERANK_TOP_N = int(os.environ["RERANK_TOP_N"])
+HYBRID_CANDIDATES = int(os.environ["HYBRID_CANDIDATES"])
+RRF_K = int(os.environ["RRF_K"])
+BENCHMARK_DIR = Path(os.environ["BENCHMARK_DIR"])
