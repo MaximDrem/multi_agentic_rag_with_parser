@@ -152,6 +152,12 @@ def split_by_tokens(text: str, max_tokens: int = MAX_TOKENS, overlap: int = OVER
         if cut >= text_len:
             break
         start = max(cut - overlap_chars, start + 1)
+        # старт следующего окна не должен падать посреди слова:
+        # двигаем его к началу ближайшего следующего слова
+        if start < text_len and not text[start].isspace():
+            m = re.search(r"\s", text[start:start + 60])
+            if m:
+                start = start + m.end()
 
     # чанк, начинающийся внутри длинной таблицы, снабжаем её заголовком
     fixed: list[str] = []
