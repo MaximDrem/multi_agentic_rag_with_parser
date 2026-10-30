@@ -21,6 +21,7 @@ class FaissIndexer:
 
     def load_model(self, model_name: str = "jinaai/jina-embeddings-v5-text-small") -> None:
         print(f"Loading embedding model {model_name} ...")
+        self.model_name = model_name
         self.model = SentenceTransformer(model_name, device="cpu", trust_remote_code=True)
         with torch.no_grad():
             test_emb = self.model.encode(["dimension probe"], task="retrieval")
@@ -86,7 +87,7 @@ class FaissIndexer:
         meta = {
             "dim": self.dim,
             "ntotal": int(self.index.ntotal),
-            "model": getattr(self.model, "_model_config", {}).get("_name_or_path") if hasattr(self.model, "_model_config") else None,
+            "model": getattr(self, "model_name", None),
         }
         meta_path = meta_path or index_path.with_suffix(".meta.json")
         with open(meta_path, "w", encoding="utf-8") as f:

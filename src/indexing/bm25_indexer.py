@@ -1,14 +1,14 @@
 import pickle
-import re
 from pathlib import Path
 
 from rank_bm25 import BM25Okapi
 
 from common.models import Chunk
+from indexing.lemma_bm25 import tokenize_lemma
 
 
 def tokenize(text: str) -> list[str]:
-    return re.findall(r"[а-яА-ЯёЁa-zA-Z0-9]+", text.lower())
+    return tokenize_lemma(text)
 
 
 class BM25Indexer:
