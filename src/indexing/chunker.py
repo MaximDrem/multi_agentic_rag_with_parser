@@ -187,7 +187,8 @@ def parse_markdown_by_headers(text: str) -> list[tuple[str, str]]:
         start = m.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         body = text[start:end].strip()
-        sections.append((title, body))
+        header = text[m.start():m.end()].strip()
+        sections.append((title, f"{header}\n\n{body}" if body else header))
     return sections
 
 
@@ -196,7 +197,7 @@ def _make_chunk(doc_path: Path, chunk_index: int, title: str, text: str) -> tupl
     chunk = Chunk(
         id=f"{source_name}::chunk-{chunk_index:05d}",
         doc_path=str(doc_path),
-        title=title or source_name,
+        title=source_name,
         text=text,
         token_count=estimate_tokens(text),
     )
@@ -231,7 +232,7 @@ def chunk_markdown_file(doc_path: Path, text: str) -> list[Chunk]:
             and estimate_tokens(merged[-1].text) + chunk.token_count <= int(MAX_TOKENS * 1.25)
         ):
             prev = merged[-1]
-            prev.text = prev.text + "\n\n" + chunk.title + "\n\n" + chunk.text
+            prev.text = prev.text + "\n\n" + chunk.text
             prev.token_count = estimate_tokens(prev.text)
         else:
             merged.append(chunk)

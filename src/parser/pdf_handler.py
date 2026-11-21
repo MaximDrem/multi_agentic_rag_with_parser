@@ -1,10 +1,12 @@
 """Обработчик PDF → Markdown с OCR для изображений и формул."""
 
+import io
 import os
 import re
 import time
 from pathlib import Path
 import fitz
+from PIL import Image, ImageStat
 
 from parser.config import TEMP_DIR
 from parser.markdown_cleaner import clean_markdown, normalize_headings, remove_redundant_linebreaks
@@ -57,38 +59,30 @@ def _extract_page_images(page, page_num: int, filepath: str) -> list:
     """Извлекает изображения со страницы PDF, возвращает список регионов."""
 
     regions = []
-    image_list = page.get_images(full=True)
 
-    for img_index, img_info in enumerate(image_list):
+    for img_index, img_info in enumerate(page.get_images(full=True)):
         xref = img_info[0]
-        base_image = page.parent.extract_image(xref)
+        for rect_index, image_rect in enumerate(page.get_image_rects(xref)):
+            clip_rect = image_rect & page.rect
+            if clip_rect.width < 5 or clip_rect.height < 5:
+                continue
 
-        if not base_image:
-            continue
+            pix = page.get_pixmap(clip=clip_rect, matrix=fitz.Matrix(3.0, 3.0), alpha=False)
+            pil_image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("L")
+            if ImageStat.Stat(pil_image).stddev[0] < 3:
+                continue
 
-        img_bytes = base_image["image"]
-        ext = base_image["ext"]
-
-        img_name = f"pdf_{Path(filepath).stem}_p{page_num}_i{img_index}.{ext}"
-        img_path = os.path.join(TEMP_DIR, img_name)
-
-        with open(img_path, "wb") as f:
-            f.write(img_bytes)
-
-        rects = page.get_image_rects(xref)
-        if rects:
-            y0 = rects[0].y0
-            y1 = rects[0].y1
-        else:
-            y0 = 0
-            y1 = 0
-
-        regions.append({
-            "type": "image",
-            "path": img_path,
-            "y0": y0,
-            "y1": y1,
-        })
+            img_name = f"pdf_{Path(filepath).stem}_p{page_num}_i{img_index}_r{rect_index}.png"
+            img_path = os.path.join(TEMP_DIR, img_name)
+            pix.save(img_path)
+            regions.append({
+                "type": "image",
+                "path": img_path,
+                "x0": clip_rect.x0,
+                "x1": clip_rect.x1,
+                "y0": clip_rect.y0,
+                "y1": clip_rect.y1,
+            })
 
     return regions
 
@@ -105,7 +99,6 @@ def _find_formula_gaps(page, blocks: list, page_num: int, filepath: str) -> list
 
     drawings = page.get_drawings()
     page_height = page.rect.height
-    page_width = page.rect.width
     margin = 50
 
     text_blocks.sort(key=lambda b: b[1])
@@ -213,47 +206,78 @@ def _find_formula_gaps(page, blocks: list, page_num: int, filepath: str) -> list
             clusters.append(current_cluster)
 
     # === Шаг 4: Рендерим каждый кластер как изображение для OCR ===
-    regions = []
-    formula_counter = 0
+    clip_rects = []
+    try:
+        table_rects = [fitz.Rect(table.bbox) for table in page.find_tables().tables]
+    except Exception:
+        table_rects = []
 
     for cluster in clusters:
-        # Находим границы кластера
-        min_y = min(text_blocks[i][1] for i in cluster)
-        max_y = max(text_blocks[i][3] for i in cluster)
+        cluster_blocks = [text_blocks[i] for i in cluster]
+        min_y = min(b[1] for b in cluster_blocks)
+        max_y = max(b[3] for b in cluster_blocks)
+        related_drawings = []
 
-        # Расширяем границы, чтобы включить все рисунки в области
         for d in drawings:
             dr = d["rect"]
             if dr.y0 > margin and dr.y1 < page_height - margin:
                 if min_y - 10 <= dr.y1 and max_y + 10 >= dr.y0:
                     min_y = min(min_y, dr.y0)
                     max_y = max(max_y, dr.y1)
+                    related_drawings.append(dr)
 
-        # Добавляем отступ
-        min_y -= 8
-        max_y += 8
+        min_x = min([b[0] for b in cluster_blocks] + [r.x0 for r in related_drawings])
+        max_x = max([b[2] for b in cluster_blocks] + [r.x1 for r in related_drawings])
+        clip_rect = fitz.Rect(min_x, min_y, max_x, max_y)
+        for table_rect in table_rects:
+            intersection = clip_rect & table_rect
+            if intersection.width > 0 and intersection.height > 0:
+                clip_rect |= table_rect
+        clip_rect = fitz.Rect(clip_rect.x0 - 8, clip_rect.y0 - 8, clip_rect.x1 + 8, clip_rect.y1 + 8) & page.rect
 
-        clip_rect = fitz.Rect(margin, min_y, page_width - margin, max_y)
+        if clip_rect.height >= 10 and clip_rect.width >= 10:
+            clip_rects.append(clip_rect)
 
-        if clip_rect.height < 10 or clip_rect.width < 10:
-            continue
+    merged_rects = []
+    for clip_rect in clip_rects:
+        current = clip_rect
+        i = 0
+        while i < len(merged_rects):
+            existing = merged_rects[i]
+            intersection = existing & current
+            if intersection.width <= 0 or intersection.height <= 0:
+                i += 1
+                continue
+            vertical_overlap = intersection.height / min(existing.height, current.height)
+            horizontal_overlap = intersection.width / min(existing.width, current.width)
+            if vertical_overlap >= 0.8 and horizontal_overlap >= 0.5:
+                current = current | merged_rects.pop(i)
+                i = 0
+            else:
+                i += 1
+        merged_rects.append(current)
 
-        mat = fitz.Matrix(3.0, 3.0)  # x3 разрешение для формул
-
+    regions = []
+    mat = fitz.Matrix(3.0, 3.0)
+    for formula_counter, clip_rect in enumerate(sorted(merged_rects, key=lambda r: (r.y0, r.x0))):
         formula_name = f"pdf_{Path(filepath).stem}_p{page_num}_f{formula_counter}.png"
         formula_path = os.path.join(TEMP_DIR, formula_name)
 
         try:
             pix = page.get_pixmap(clip=clip_rect, matrix=mat)
             pix.save(formula_path)
-
+            is_table = any(
+                (clip_rect & table_rect).width > 0 and (clip_rect & table_rect).height > 0
+                for table_rect in table_rects
+            )
             regions.append({
-                "type": "formula",
+                "type": "table" if is_table else "formula",
                 "path": formula_path,
-                "y0": min_y,
-                "y1": max_y,
+                "x0": clip_rect.x0,
+                "x1": clip_rect.x1,
+                "y0": clip_rect.y0,
+                "y1": clip_rect.y1,
             })
-            formula_counter += 1
         except Exception:
             pass
 
@@ -271,15 +295,19 @@ def _merge_text_and_images(blocks: list, image_regions: list, formula_regions: l
             text = block[4].strip()
             block_y0 = block[1]
             block_y1 = block[3]
+            block_rect = fitz.Rect(block[0], block_y0, block[2], block_y1)
+            block_area = block_rect.width * block_rect.height
 
-            # Проверяем, пересекается ли текстовый блок с формульным регионом
-            overlaps_formula = False
-            for fr in formula_regions:
-                if max(block_y0, fr["y0"]) < min(block_y1, fr["y1"]):
-                    overlaps_formula = True
-                    break
+            overlaps_visual_region = False
+            for region in [*formula_regions, *image_regions]:
+                region_rect = fitz.Rect(region.get("x0", 0), region["y0"], region.get("x1", 0), region["y1"])
+                intersection = block_rect & region_rect
+                if block_area > 0 and intersection.width > 0 and intersection.height > 0:
+                    if intersection.width * intersection.height >= 0.5 * block_area:
+                        overlaps_visual_region = True
+                        break
 
-            if overlaps_formula:
+            if overlaps_visual_region:
                 continue
 
             elements.append({
@@ -292,9 +320,23 @@ def _merge_text_and_images(blocks: list, image_regions: list, formula_regions: l
                 "size": _get_block_font_size(block),
             })
 
-    elements.extend(image_regions)
-    elements.extend(formula_regions)
+    for image in image_regions:
+        image_rect = fitz.Rect(image.get("x0", 0), image["y0"], image.get("x1", 0), image["y1"])
+        if image_rect.width <= 0 or image_rect.height <= 0:
+            elements.append(image)
+            continue
+        covered = False
+        for region in formula_regions:
+            region_rect = fitz.Rect(region.get("x0", 0), region["y0"], region.get("x1", 0), region["y1"])
+            intersection = image_rect & region_rect
+            if intersection.width > 0 and intersection.height > 0:
+                if intersection.width * intersection.height >= 0.8 * image_rect.width * image_rect.height:
+                    covered = True
+                    break
+        if not covered:
+            elements.append(image)
 
+    elements.extend(formula_regions)
     elements.sort(key=lambda e: (e["y0"], e.get("x0", 0)))
 
     return elements
@@ -322,15 +364,22 @@ def _process_pdf_element(elem: dict, ocr_client) -> str:
 
         return f"\n{text}\n"
 
-    elif elem["type"] in ("image", "formula"):
-        ocr_result = ocr_client.ocr_image(elem["path"])
+    elif elem["type"] == "table":
+        ocr_result = ocr_client.ocr_table_image(elem["path"])
+        if ocr_result:
+            return f"\n{ocr_result}\n"
 
+    elif elem["type"] == "formula":
+        ocr_result = ocr_client.ocr_formula_region(elem["path"])
         if not ocr_result:
-            ocr_result = ocr_client.ocr_formula_region(elem["path"])
+            ocr_result = ocr_client.ocr_image(elem["path"])
+        if ocr_result:
+            return f"\n{ocr_result}\n"
 
+    elif elem["type"] == "image":
+        ocr_result = ocr_client.ocr_image(elem["path"])
         if not ocr_result:
             ocr_result = ocr_client.ocr_table_image(elem["path"])
-
         if ocr_result:
             return f"\n{ocr_result}\n"
 
