@@ -1,10 +1,14 @@
+import bisect
 import re
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from common.models import Chunk
 
 
 MAX_TOKENS = 512
+MAX_ATOMIC_TOKENS = 4096
 OVERLAP_TOKENS = 128
 MIN_TOKENS = 60          # мельче — склеиваем с соседом
 TOKENS_PER_CHAR_CYR = 0.32   # кириллица: ~3.1 симв/токен (рус. юртекст)
@@ -15,6 +19,16 @@ _WS_RE = re.compile(r"\s")
 _SENT_END_RE = re.compile(r"[.!?;:]")
 _HEADER_RE = re.compile(r"^(#{1,4})\s+(.*?)\s*$", re.MULTILINE)
 _TABLE_ROW_RE = re.compile(r"^\s*\|.*$", re.MULTILINE)
+_LIST_HEADING_RE = re.compile(r"^\s*#{1,4}\s+")
+_LIST_BULLET_RE = re.compile(r"[-•–]\s+")
+_LIST_ALPHA_RE = re.compile(r"[а-яА-Яa-zA-Z]\)\s+")
+_LIST_NUMBER_PAREN_RE = re.compile(r"\d+\)\s+")
+_LIST_NUMBER_DOT_RE = re.compile(r"\d+\.\s+")
+_LIST_LOWER_RE = re.compile(r"[а-яёa-z]")
+_LIST_BLANK_LINE_RE = re.compile(r"\n[ \t]*\n")
+_LIST_PARAGRAPH_RE = re.compile(r"(?:^|\n[ \t]*\n)(.*?)(?=\n[ \t]*\n|$)", re.DOTALL)
+_LIST_SENTENCE_END_RE = re.compile(r"(?<!\d)[.!?](?:\s|$)")
+_MAX_CONTINUATION_TOKENS = int(MAX_TOKENS * 1.25)
 _FUNC_WORDS = {
     "и", "в", "с", "по", "не", "на", "или", "из", "за", "к", "у", "о", "от",
     "до", "для", "при", "что", "которые", "который", "а", "но", "да", "также",
@@ -31,8 +45,22 @@ def _tokens_per_char(text: str) -> float:
     return TOKENS_PER_CHAR_CYR * share + TOKENS_PER_CHAR_OTHER * (1 - share)
 
 
+@lru_cache(maxsize=1)
+def _tokenizer():
+    from transformers import AutoTokenizer
+
+    return AutoTokenizer.from_pretrained("jinaai/jina-embeddings-v5-text-small", trust_remote_code=True)
+
+
+@lru_cache(maxsize=8192)
 def estimate_tokens(text: str) -> int:
-    return int(len(text) * _tokens_per_char(text))
+    return len(_tokenizer().encode(text, add_special_tokens=False))
+
+
+@lru_cache(maxsize=256)
+def _token_offsets(text: str) -> tuple[tuple[int, int], ...]:
+    encoded = _tokenizer()(text, add_special_tokens=False, return_offsets_mapping=True)
+    return tuple((start, end) for start, end in encoded["offset_mapping"] if end > start)
 
 
 def _table_blocks(text: str) -> list[tuple[int, int, int]]:
@@ -100,6 +128,16 @@ def _find_cut(text: str, start: int, max_chars: int, tables: list[tuple[int, int
     if best >= 0 and zone_start + best > start + MIN_TOKENS:
         return zone_start + best
 
+    in_table = _inside_table(tables, start) or _inside_table(tables, hard_end)
+    atomic_pattern = r"\n(?=\s*\|)" if in_table else r"(?<!\d)[.!?;][\"')\]»]*[ \t\n]+"
+    atomic_match = re.search(atomic_pattern, text[hard_end:])
+    if atomic_match:
+        atomic_end = hard_end + atomic_match.end()
+        if estimate_tokens(text[start:atomic_end]) <= MAX_ATOMIC_TOKENS:
+            return atomic_end
+    elif estimate_tokens(text[start:]) <= MAX_ATOMIC_TOKENS:
+        return len(text)
+
     # 3) последняя запятая в последних 15% окна — лучше, чем оборвать на «не»/«с»
     tail15 = text[start + int(max_chars * 0.85):hard_end]
     comma = tail15.rfind(", ")
@@ -128,51 +166,75 @@ def _inside_table(tables: list[tuple[int, int, int]], pos: int) -> bool:
     return any(s < pos < e for s, e, _ in tables)
 
 
+def _overlap_start(text: str, current_start: int, target: int, cut: int, tables: list[tuple[int, int, int]]) -> int:
+    segment = text[current_start:cut]
+    candidates = []
+    in_table = _inside_table(tables, target) or _inside_table(tables, cut - 1)
+    patterns = [r"\n+(?=\s*\|)"] if in_table else [
+        r"(?<!\d)[.!?;][\"')\]»]*[ \t\n]+",
+        r"\n+(?=\s*\|)",
+        r"\n+(?=\s*(?:[-•]|\d+(?:\.\d+)*[.)])\s)",
+        r"\n+(?=\s*#{1,4}\s)",
+    ]
+    for pattern in patterns:
+        candidates.extend(current_start + m.end() for m in re.finditer(pattern, segment))
+    candidates = sorted({p for p in candidates if current_start < p < cut})
+    after = [p for p in candidates if p >= target]
+    if after:
+        return after[0]
+    before = [p for p in candidates if p < target]
+    if before:
+        return before[-1]
+    if not candidates:
+        return cut
+    return target
+
+
 def split_by_tokens(text: str, max_tokens: int = MAX_TOKENS, overlap: int = OVERLAP_TOKENS) -> list[str]:
-    """Скользящее окно с привязкой к границам предложений/строк/слов.
+    if not text.strip():
+        return []
+    offsets = _token_offsets(text)
+    if len(offsets) <= max_tokens:
+        return [text.strip()]
 
-    Окончание окна никогда не проходит внутри слова или внутри строки
-    таблицы; чанк-продолжение внутри длинной таблицы получает её заголовок.
-    """
-    coef = _tokens_per_char(text)
-    max_chars = int(max_tokens / coef)
-    overlap_chars = int(overlap / coef)
     tables = _table_blocks(text)
-
-    chunks: list[str] = []
+    starts = [start for start, _ in offsets]
+    ends = [end for _, end in offsets]
+    pieces: list[tuple[int, str]] = []
     start = 0
-    text_len = len(text)
-    while start < text_len:
-        cut = _find_cut(text, start, max_chars, tables)
-        if cut <= start:  # защита от вырождения
-            cut = min(start + max_chars, text_len)
+
+    while start < len(text):
+        start_token = bisect.bisect_left(starts, start)
+        if start_token >= len(offsets):
+            break
+        end_token = min(start_token + max_tokens, len(offsets))
+        hard_end = ends[end_token - 1]
+        cut = _find_cut(text, start, hard_end - start, tables)
+        if cut <= start:
+            cut = hard_end
         piece = text[start:cut].strip()
         if piece:
-            chunks.append(piece)
-        if cut >= text_len:
+            pieces.append((start, piece))
+        if cut >= len(text):
             break
-        start = max(cut - overlap_chars, start + 1)
-        # старт следующего окна не должен падать посреди слова:
-        # двигаем его к началу ближайшего следующего слова
-        if start < text_len and not text[start].isspace():
-            m = re.search(r"\s", text[start:start + 60])
-            if m:
-                start = start + m.end()
 
-    # чанк, начинающийся внутри длинной таблицы, снабжаем её заголовком
+        cut_token = bisect.bisect_right(ends, cut)
+        overlap_token = max(cut_token - overlap, start_token + 1)
+        if overlap_token >= len(offsets):
+            break
+        target = offsets[overlap_token][0]
+        next_start = _overlap_start(text, start, target, cut, tables)
+        start = max(min(next_start, cut), start + 1)
+
     fixed: list[str] = []
-    for piece in chunks:
-        offset = text.find(piece)
-        if offset < 0:
-            fixed.append(piece)
-            continue
-        for s, e, he in tables:
-            if s < offset < e and he <= offset:
-                header = text[s:he].strip()
-                fixed.append(header + "\n" + piece)
+    for offset, piece in pieces:
+        for table_start, table_end, header_end in tables:
+            if table_start < offset < table_end and header_end <= offset:
+                candidate = text[table_start:header_end].strip() + "\n" + piece
+                if estimate_tokens(candidate) <= max_tokens or estimate_tokens(piece) > max_tokens:
+                    piece = candidate
                 break
-        else:
-            fixed.append(piece)
+        fixed.append(piece)
     return fixed
 
 
@@ -204,6 +266,174 @@ def _make_chunk(doc_path: Path, chunk_index: int, title: str, text: str) -> tupl
     return chunk, chunk_index + 1
 
 
+@dataclass(frozen=True)
+class _ListContext:
+    prefix: str
+    style: str
+
+
+def _list_item_style(text: str, allow_numeric_dot: bool = False) -> str | None:
+    stripped = _LIST_HEADING_RE.sub("", text, count=1).lstrip()
+    if _LIST_BULLET_RE.match(stripped):
+        return "bullet"
+    if _LIST_ALPHA_RE.match(stripped):
+        return "alpha"
+    if _LIST_NUMBER_PAREN_RE.match(stripped):
+        return "numeric_paren"
+    if allow_numeric_dot and _LIST_NUMBER_DOT_RE.match(stripped):
+        return "numeric_dot"
+    if _LIST_LOWER_RE.match(stripped):
+        return "lower"
+    return None
+
+
+def _list_paragraphs(text: str) -> list[str]:
+    return [part.strip() for part in _LIST_BLANK_LINE_RE.split(text) if part.strip()]
+
+
+def _list_opener(text: str) -> tuple[str, str] | None:
+    paragraphs = list(_LIST_PARAGRAPH_RE.finditer(text))
+    candidates = [match for match in paragraphs if match.group(1).strip().endswith(":")]
+    if not candidates:
+        return None
+    match = candidates[-1]
+    prefix = match.group(1).strip()
+    complete = _list_item_style(prefix, allow_numeric_dot=True) != "lower"
+    if not complete:
+        preceding = _list_paragraphs(text[:match.start(1)])
+        if preceding and preceding[-1].lstrip().startswith("#"):
+            prefix = preceding[-1] + "\n\n" + prefix
+            complete = True
+    if not complete:
+        return None
+    return prefix, text[match.end():]
+
+
+def _independent_numeric_opener(text: str) -> bool:
+    paragraphs = _list_paragraphs(text)
+    return bool(
+        paragraphs
+        and paragraphs[0].endswith(":")
+        and _list_item_style(text, allow_numeric_dot=True) == "numeric_dot"
+    )
+
+
+def _list_body_style(text: str) -> str | None:
+    styled = []
+    for paragraph in _list_paragraphs(text):
+        style = _list_item_style(paragraph)
+        if style:
+            styled.append((paragraph, style))
+    if not styled:
+        return None
+    first_style = styled[0][1]
+    if first_style == "lower":
+        lower_items = sum(
+            style == "lower" and paragraph.rstrip().endswith(";")
+            for paragraph, style in styled
+        )
+        if lower_items < 2:
+            return None
+    return first_style
+
+
+def _last_list_item_style(text: str) -> str | None:
+    explicit_styles = []
+    for line in text.splitlines():
+        style = _list_item_style(line, allow_numeric_dot=True)
+        if style and style != "lower":
+            explicit_styles.append(style)
+    if explicit_styles:
+        return explicit_styles[-1]
+    for paragraph in reversed(_list_paragraphs(text)):
+        if _list_item_style(paragraph) == "lower":
+            return "lower"
+    return None
+
+
+def _list_is_unfinished(text: str) -> bool:
+    semicolon = text.rfind(";")
+    return semicolon >= 0 and not _LIST_SENTENCE_END_RE.search(text[semicolon + 1:])
+
+
+def _make_list_continuations_standalone(chunks: list[Chunk]) -> int:
+    snapshot = tuple(
+        (chunk.id, chunk.prev_chunk_id, chunk.next_chunk_id, chunk.text)
+        for chunk in chunks
+    )
+    contexts: dict[int, _ListContext] = {}
+    changed = 0
+
+    for i, chunk in enumerate(chunks):
+        if i == 0:
+            continue
+        current_id, current_prev, _, current_text = snapshot[i]
+        previous_id, _, previous_next, previous_text = snapshot[i - 1]
+        if current_prev != previous_id or previous_next != current_id:
+            continue
+
+        opener = _list_opener(previous_text)
+        previous_context = contexts.get(i - 1)
+        existing_prefixes = []
+        if previous_context:
+            existing_prefixes.append(previous_context.prefix)
+        if opener:
+            existing_prefixes.append(opener[0])
+
+        already_prefixed = False
+        for prefix in dict.fromkeys(existing_prefixes):
+            marker = prefix + "\n\n"
+            if current_text.startswith(marker):
+                remainder = current_text[len(marker):]
+                style = _list_item_style(remainder) or _list_item_style(
+                    remainder, allow_numeric_dot=True
+                )
+                if style:
+                    contexts[i] = _ListContext(prefix, style)
+                already_prefixed = True
+                break
+        if already_prefixed or _independent_numeric_opener(current_text):
+            continue
+
+        prefix = None
+        style = _list_item_style(current_text)
+        if opener and previous_text.rstrip().endswith(":"):
+            colon_style = _list_item_style(current_text, allow_numeric_dot=True)
+            if colon_style:
+                prefix = opener[0]
+                style = colon_style
+        elif (
+            opener
+            and style
+            and previous_text.rstrip().endswith(";")
+            and _list_body_style(opener[1]) == style
+            and _last_list_item_style(previous_text) == style
+        ):
+            prefix = opener[0]
+        elif (
+            previous_context
+            and style
+            and previous_context.style == style
+            and _last_list_item_style(previous_text) == style
+            and _list_is_unfinished(previous_text)
+        ):
+            prefix = previous_context.prefix
+
+        if prefix is None or style is None:
+            continue
+        contexts[i] = _ListContext(prefix, style)
+        if prefix in current_text:
+            continue
+        candidate = prefix + "\n\n" + current_text
+        token_count = estimate_tokens(candidate)
+        if token_count <= _MAX_CONTINUATION_TOKENS:
+            chunk.text = candidate
+            chunk.token_count = token_count
+            changed += 1
+
+    return changed
+
+
 def chunk_markdown_file(doc_path: Path, text: str) -> list[Chunk]:
     sections = parse_markdown_by_headers(text)
     chunks: list[Chunk] = []
@@ -226,22 +456,34 @@ def chunk_markdown_file(doc_path: Path, text: str) -> list[Chunk]:
     # заголовок секции сохраняем в тексте, чтобы не терять его термы
     merged: list[Chunk] = []
     for chunk in chunks:
-        if (
-            merged
-            and chunk.token_count < MIN_TOKENS
-            and estimate_tokens(merged[-1].text) + chunk.token_count <= int(MAX_TOKENS * 1.25)
-        ):
+        if merged and chunk.token_count < MIN_TOKENS:
             prev = merged[-1]
-            prev.text = prev.text + "\n\n" + chunk.text
-            prev.token_count = estimate_tokens(prev.text)
-        else:
-            merged.append(chunk)
+            candidate = prev.text + "\n\n" + chunk.text
+            if estimate_tokens(candidate) <= int(MAX_TOKENS * 1.25):
+                prev.text = candidate
+                prev.token_count = estimate_tokens(candidate)
+                continue
+        merged.append(chunk)
 
+    forward: list[Chunk] = []
     for i, chunk in enumerate(merged):
-        chunk.prev_chunk_id = merged[i - 1].id if i > 0 else None
-        chunk.next_chunk_id = merged[i + 1].id if i < len(merged) - 1 else None
+        if i + 1 < len(merged) and chunk.token_count < MIN_TOKENS:
+            next_chunk = merged[i + 1]
+            candidate = chunk.text + "\n\n" + next_chunk.text
+            if estimate_tokens(candidate) <= int(MAX_TOKENS * 1.25):
+                next_chunk.text = candidate
+                next_chunk.token_count = estimate_tokens(candidate)
+                continue
+        forward.append(chunk)
 
-    return merged
+    for i, chunk in enumerate(forward):
+        chunk.id = f"{doc_path.name}::chunk-{i:05d}"
+    for i, chunk in enumerate(forward):
+        chunk.prev_chunk_id = forward[i - 1].id if i > 0 else None
+        chunk.next_chunk_id = forward[i + 1].id if i < len(forward) - 1 else None
+
+    _make_list_continuations_standalone(forward)
+    return forward
 
 
 def chunk_directory(markdown_dir: Path) -> list[Chunk]:

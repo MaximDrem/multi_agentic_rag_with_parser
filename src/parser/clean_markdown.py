@@ -105,7 +105,7 @@ def consolidate_paragraphs(text: str) -> str:
             continue
 
         if prev.endswith('-'):
-            para_lines[-1] = prev[:-1] + stripped
+            para_lines[-1] = prev + stripped
             continue
 
         # If prev ends with sentence-ending punctuation, flush and start new
@@ -195,7 +195,6 @@ def clean_text(text: str) -> str:
     text = clean_toc_dots(text)
     text = shorten_underscores(text)
     text = consolidate_paragraphs(text)
-    text = split_toc_entries(text)
     return text
 
 

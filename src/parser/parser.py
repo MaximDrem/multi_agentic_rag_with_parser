@@ -99,6 +99,13 @@ def run(
     else:
         files = collect_files(input_dir)
 
+    stems = {}
+    for fpath, _ in files:
+        stem = Path(fpath).stem
+        if stem in stems:
+            raise ValueError(f"Коллизия имени Markdown: {stems[stem]} и {fpath}")
+        stems[stem] = fpath
+
     if dry_run:
         print(f"Найдено файлов для обработки: {len(files)}")
         for fpath, ext in files:
@@ -120,6 +127,8 @@ def run(
     # Создаём временную папку
     os.makedirs(TEMP_DIR, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
+    if not files_filter and os.listdir(output_dir):
+        raise ValueError(f"Папка полного парсинга должна быть пустой: {output_dir}")
 
     for fpath, ext in files:
         fname = os.path.basename(fpath)
@@ -208,6 +217,8 @@ def main():
     # Итог
     print("=" * 60)
     print(f"Готово. Успешно: {stats['success']}, Ошибок: {stats['errors']}, Всего: {stats['total']}")
+    if stats["errors"]:
+        raise SystemExit(1)
 
     return stats
 

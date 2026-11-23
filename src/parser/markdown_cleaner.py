@@ -20,16 +20,8 @@ def clean_markdown(text: str) -> str:
             cleaned_lines.append("")
             continue
 
-        # Пропускаем строки — одиночные числа (номера страниц)
-        if re.fullmatch(r"\d{1,4}", stripped):
-            continue
-
-        # Пропускаем строки — римские цифры (номера страниц)
-        if re.fullmatch(r"[IVX]+", stripped):
-            continue
-
         # Пропускаем строки, состоящие ТОЛЬКО из спецсимволов/точек/пробелов
-        if re.fullmatch(r"[\.\-\—\–\s_\*#\|\+\=~\^]+", stripped):
+        if not stripped.startswith("|") and re.fullmatch(r"[\.\-\—\–\s_\*#\|\+\=~\^]+", stripped):
             continue
 
         # Пропускаем строки-разделители из точек (типа "..........")
@@ -69,13 +61,6 @@ def clean_markdown(text: str) -> str:
 
 def _clean_line(line: str) -> str:
     """Очистка одной строки."""
-
-    # Удаляем URL-ы
-    line = re.sub(r"https?://\S+", "", line)
-    line = re.sub(r"www\.\S+", "", line)
-
-    # Удаляем email
-    line = re.sub(r"\S+@\S+\.\S+", "", line)
 
     # Удаляем многоточия и неразрывные пробелы
     line = line.replace("\xa0", " ")

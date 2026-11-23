@@ -9,7 +9,7 @@ import fitz
 from PIL import Image, ImageStat
 
 from parser.config import TEMP_DIR
-from parser.markdown_cleaner import clean_markdown, normalize_headings, remove_redundant_linebreaks
+from parser.markdown_cleaner import clean_markdown, normalize_headings
 
 
 def process_pdf(filepath: str, ocr_client) -> str:
@@ -34,9 +34,12 @@ def process_pdf(filepath: str, ocr_client) -> str:
         image_regions = _extract_page_images(page, page_num, filepath)
 
         # Обнаруживаем пропуски между текстовыми блоками с рисунками (формулы)
-        formula_regions = _find_formula_gaps(page, blocks, page_num, filepath)
+        detected_regions = _find_formula_gaps(page, blocks, page_num, filepath)
+        formula_regions = [region for region in detected_regions if region["type"] == "formula"]
+        table_regions = _find_table_regions(page, page_num, filepath, formula_regions)
 
-        elements = _merge_text_and_images(blocks, image_regions, formula_regions)
+        elements = _merge_text_and_images(blocks, image_regions, formula_regions + table_regions)
+        elements = _merge_link_elements(page, elements)
 
         for elem in elements:
             result = _process_pdf_element(elem, ocr_client)
@@ -48,7 +51,6 @@ def process_pdf(filepath: str, ocr_client) -> str:
     doc.close()
 
     md_text = "\n".join(md_lines)
-    md_text = remove_redundant_linebreaks(md_text)
     md_text = clean_markdown(md_text)
     md_text = normalize_headings(md_text)
 
@@ -69,6 +71,8 @@ def _extract_page_images(page, page_num: int, filepath: str) -> list:
 
             pix = page.get_pixmap(clip=clip_rect, matrix=fitz.Matrix(3.0, 3.0), alpha=False)
             pil_image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("L")
+            if pil_image.width < 80 and pil_image.height < 80:
+                continue
             if ImageStat.Stat(pil_image).stddev[0] < 3:
                 continue
 
@@ -85,6 +89,108 @@ def _extract_page_images(page, page_num: int, filepath: str) -> list:
             })
 
     return regions
+
+
+def _markdown_table(rows: list) -> str:
+    normalized = []
+    for row in rows:
+        cells = [re.sub(r"\s+", " ", str(cell or "")).strip().replace("|", "\\|") for cell in row]
+        if any(cells):
+            normalized.append(cells)
+    if not normalized:
+        return ""
+    width = max(len(row) for row in normalized)
+    if width < 2:
+        return ""
+    normalized = [row + [""] * (width - len(row)) for row in normalized]
+    lines = ["| " + " | ".join(row) + " |" for row in normalized]
+    lines.insert(1, "| " + " | ".join(["---"] * width) + " |")
+    return "\n".join(lines)
+
+
+def _has_raster_content(page, rect: fitz.Rect) -> bool:
+    area = rect.width * rect.height
+    if area <= 0:
+        return False
+    covered = 0.0
+    for image in page.get_images(full=True):
+        for image_rect in page.get_image_rects(image[0]):
+            intersection = image_rect & rect
+            if intersection.width > 0 and intersection.height > 0:
+                covered += intersection.width * intersection.height
+    return covered >= 0.25 * area
+
+
+def _find_table_regions(page, page_num: int, filepath: str, formula_regions: list) -> list:
+    regions = []
+    try:
+        tables = page.find_tables().tables
+    except Exception:
+        return regions
+    for table_index, table in enumerate(tables):
+        clip_rect = fitz.Rect(table.bbox) & page.rect
+        if clip_rect.width < 10 or clip_rect.height < 10:
+            continue
+        native_rows = table.extract()
+        native_has_content = any(str(cell or "").strip() for row in native_rows for cell in row)
+        native_text = page.get_textbox(clip_rect)
+        if not native_has_content and not re.search(r"[A-Za-zА-Яа-яЁё]", native_text) and not _has_raster_content(page, clip_rect):
+            continue
+        needs_ocr = False
+        for formula in formula_regions:
+            formula_rect = fitz.Rect(formula["x0"], formula["y0"], formula["x1"], formula["y1"])
+            intersection = clip_rect & formula_rect
+            if intersection.width > 0 and intersection.height > 0:
+                needs_ocr = True
+                break
+        markdown = "" if needs_ocr else _markdown_table(native_rows)
+        if markdown:
+            regions.append({
+                "type": "table_text",
+                "markdown": markdown,
+                "x0": clip_rect.x0,
+                "x1": clip_rect.x1,
+                "y0": clip_rect.y0,
+                "y1": clip_rect.y1,
+            })
+            continue
+        table_name = f"pdf_{Path(filepath).stem}_p{page_num}_t{table_index}.png"
+        table_path = os.path.join(TEMP_DIR, table_name)
+        pix = page.get_pixmap(clip=clip_rect, matrix=fitz.Matrix(3.0, 3.0), alpha=False)
+        pix.save(table_path)
+        regions.append({
+            "type": "table",
+            "path": table_path,
+            "x0": clip_rect.x0,
+            "x1": clip_rect.x1,
+            "y0": clip_rect.y0,
+            "y1": clip_rect.y1,
+        })
+    return regions
+
+
+def _merge_link_elements(page, elements: list) -> list:
+    result = list(elements)
+    text_content = "\n".join(element.get("text", "") for element in result)
+    for link in page.get_links():
+        uri = link.get("uri")
+        if not uri or uri in text_content:
+            continue
+        rect = fitz.Rect(link["from"])
+        label = re.sub(r"\s+", " ", page.get_textbox(rect)).strip() or uri
+        if uri.startswith("mailto:") and uri[7:] in text_content:
+            continue
+        result.append({
+            "type": "text",
+            "text": f"[{label}]({uri})",
+            "x0": rect.x0,
+            "x1": rect.x1,
+            "y0": rect.y0,
+            "y1": rect.y1,
+            "size": 10,
+        })
+    result.sort(key=lambda element: (element["y0"], element.get("x0", 0)))
+    return result
 
 
 def _find_formula_gaps(page, blocks: list, page_num: int, filepath: str) -> list:
@@ -289,6 +395,21 @@ def _merge_text_and_images(blocks: list, image_regions: list, formula_regions: l
     Текстовые блоки, перекрывающиеся с формульными регионами, удаляются."""
 
     elements = []
+    visual_regions = [*formula_regions, *image_regions]
+    for region in visual_regions:
+        region_rect = fitz.Rect(region.get("x0", 0), region["y0"], region.get("x1", 0), region["y1"])
+        covered_text = []
+        for block in blocks:
+            if block[6] != 0 or not block[4].strip():
+                continue
+            block_rect = fitz.Rect(block[0], block[1], block[2], block[3])
+            intersection = block_rect & region_rect
+            block_area = block_rect.width * block_rect.height
+            if block_area > 0 and intersection.width > 0 and intersection.height > 0:
+                if intersection.width * intersection.height >= 0.5 * block_area:
+                    covered_text.append(block[4].strip())
+        if covered_text:
+            region["fallback_text"] = "\n\n".join(covered_text)
 
     for block in blocks:
         if block[6] == 0:
@@ -299,7 +420,7 @@ def _merge_text_and_images(blocks: list, image_regions: list, formula_regions: l
             block_area = block_rect.width * block_rect.height
 
             overlaps_visual_region = False
-            for region in [*formula_regions, *image_regions]:
+            for region in visual_regions:
                 region_rect = fitz.Rect(region.get("x0", 0), region["y0"], region.get("x1", 0), region["y1"])
                 intersection = block_rect & region_rect
                 if block_area > 0 and intersection.width > 0 and intersection.height > 0:
@@ -349,6 +470,29 @@ def _get_block_font_size(block) -> float:
     return 10.0
 
 
+def _ocr_with_fallback(elem: dict, ocr_client) -> str:
+    try:
+        if elem["type"] == "table":
+            result = ocr_client.ocr_table_image(elem["path"])
+        elif elem["type"] == "formula":
+            result = ocr_client.ocr_formula_region(elem["path"])
+            if not result:
+                result = ocr_client.ocr_image(elem["path"])
+        else:
+            result = ocr_client.ocr_image(elem["path"])
+            if not result:
+                result = ocr_client.ocr_table_image(elem["path"])
+    except Exception:
+        if elem.get("fallback_text"):
+            return f"\n{elem['fallback_text']}\n"
+        raise
+    if result:
+        return f"\n{result}\n"
+    if elem.get("fallback_text"):
+        return f"\n{elem['fallback_text']}\n"
+    return ""
+
+
 def _process_pdf_element(elem: dict, ocr_client) -> str:
     """Обрабатывает один элемент (текст, изображение или формула)."""
 
@@ -364,24 +508,11 @@ def _process_pdf_element(elem: dict, ocr_client) -> str:
 
         return f"\n{text}\n"
 
-    elif elem["type"] == "table":
-        ocr_result = ocr_client.ocr_table_image(elem["path"])
-        if ocr_result:
-            return f"\n{ocr_result}\n"
+    elif elem["type"] == "table_text":
+        return f"\n{elem['markdown']}\n"
 
-    elif elem["type"] == "formula":
-        ocr_result = ocr_client.ocr_formula_region(elem["path"])
-        if not ocr_result:
-            ocr_result = ocr_client.ocr_image(elem["path"])
-        if ocr_result:
-            return f"\n{ocr_result}\n"
-
-    elif elem["type"] == "image":
-        ocr_result = ocr_client.ocr_image(elem["path"])
-        if not ocr_result:
-            ocr_result = ocr_client.ocr_table_image(elem["path"])
-        if ocr_result:
-            return f"\n{ocr_result}\n"
+    elif elem["type"] in ("table", "formula", "image"):
+        return _ocr_with_fallback(elem, ocr_client)
 
     return ""
 

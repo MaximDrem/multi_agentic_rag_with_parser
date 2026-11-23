@@ -157,9 +157,16 @@ class OCRCient:
         )
 
         if resp.status_code != 200:
-            return f"[OCR_ERROR {resp.status_code}]"
+            raise RuntimeError(f"OCR HTTP {resp.status_code}: {resp.text[:500]}")
 
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        payload = resp.json()
+        choice = payload["choices"][0]
+        if choice.get("finish_reason") == "length":
+            raise RuntimeError(f"OCR response truncated by max_tokens: {Path(image_path).name}")
+        content = choice["message"].get("content")
+        if not isinstance(content, str):
+            raise RuntimeError("OCR response has no text content")
+        return content.strip()
 
 
 

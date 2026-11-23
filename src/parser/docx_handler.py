@@ -11,10 +11,14 @@ from lxml import etree
 from PIL import Image
 
 from parser.config import TEMP_DIR
-from parser.markdown_cleaner import clean_markdown, normalize_headings, remove_redundant_linebreaks
+from parser.markdown_cleaner import clean_markdown, normalize_headings
 from parser.omml_to_latex import convert_omml_to_latex
 
 MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+V_NS = "urn:schemas-microsoft-com:vml"
 
 
 def process_docx(filepath: str, ocr_client) -> str:
@@ -52,7 +56,6 @@ def process_docx(filepath: str, ocr_client) -> str:
     md_text = "\n".join(md_lines)
 
     # Пост-обработка
-    md_text = remove_redundant_linebreaks(md_text)
     md_text = clean_markdown(md_text)
     md_text = normalize_headings(md_text)
 
@@ -101,42 +104,86 @@ def _process_element(elem, ocr_client, docx_path: str, heading_level: int) -> st
 def _process_paragraph(para, ocr_client) -> str:
     """Обрабатывает параграф: текст, изображения, OMML-формулы."""
 
-    text = para.text.strip()
+    text = _extract_text_from_paragraph(para)
     style_name = para.style.name if para.style else ""
+    parts = []
 
-    # 1. OMML-формулы (Office Math) — конвертируем в LaTeX
-    omml_formulas = _extract_omml_from_paragraph(para)
-    if omml_formulas:
-        # Если в параграфе есть ещё текст кроме формул — выводим текст + формулы
-        if text and text != ",":
-            return f"\n{text}\n\n" + "\n\n".join(omml_formulas) + "\n"
-        return "\n" + "\n\n".join(omml_formulas) + "\n"
-
-    # 2. Определяем, заголовок ли это
-    heading_md = _detect_heading(text, style_name, para)
-    if heading_md:
-        return heading_md
-
-    # 3. Проверяем наличие изображений в параграфе
-    images_in_para = _extract_images_from_paragraph(para)
-    if images_in_para:
-        results = []
-        for img_path in images_in_para:
-            ocr_result = ocr_client.ocr_image(img_path)
-            if ocr_result:
-                results.append(ocr_result)
-        if results:
-            return "\n\n".join(results)
-
-    # 4. Проверяем, есть ли в тексте потенциальные формулы (LaTeX-подобные)
-    if _is_potential_formula(text):
-        return f"$$\n{text}\n$$"
-
-    # 5. Обычный текст
     if text:
-        return f"\n{text}\n"
+        list_marker = _get_list_marker(para)
+        heading_md = "" if list_marker else _detect_heading(text, style_name, para)
+        if list_marker:
+            parts.append(f"{list_marker} {text}")
+        elif heading_md:
+            parts.append(heading_md.strip("\n"))
+        elif _is_potential_formula(text):
+            parts.append(f"$$\n{text}\n$$")
+        else:
+            parts.append(text)
 
-    return ""
+    parts.extend(_extract_omml_from_paragraph(para))
+
+    for img_path in _extract_images_from_paragraph(para):
+        try:
+            ocr_result = ocr_client.ocr_image(img_path)
+        except Exception:
+            continue
+        if ocr_result:
+            parts.append(ocr_result)
+
+    if not parts:
+        return ""
+
+    return "\n" + "\n\n".join(part.strip("\n") for part in parts) + "\n"
+
+
+def _extract_text_from_paragraph(para) -> str:
+    return _extract_text_from_element(para._element, para).strip()
+
+
+def _extract_text_from_element(element, para) -> str:
+    parts = []
+    for child in element:
+        if child.tag == f"{{{W_NS}}}r":
+            parts.append(_extract_text_from_run(child))
+        elif child.tag == f"{{{W_NS}}}hyperlink":
+            parts.append(_extract_hyperlink_text(child, para))
+        elif child.tag.startswith(f"{{{MATH_NS}}}"):
+            continue
+        else:
+            parts.append(_extract_text_from_element(child, para))
+    return "".join(parts)
+
+
+def _extract_text_from_run(run) -> str:
+    parts = []
+    for elem in run.iter():
+        if elem.tag == f"{{{W_NS}}}t":
+            parts.append(elem.text or "")
+        elif elem.tag == f"{{{W_NS}}}tab":
+            parts.append("\t")
+        elif elem.tag in {f"{{{W_NS}}}br", f"{{{W_NS}}}cr"}:
+            parts.append("\n")
+        elif elem.tag == f"{{{W_NS}}}noBreakHyphen":
+            parts.append("-")
+    return "".join(parts)
+
+
+def _extract_hyperlink_text(hyperlink, para) -> str:
+    text = _extract_text_from_element(hyperlink, para)
+    if not text:
+        return ""
+
+    rel_id = hyperlink.get(f"{{{R_NS}}}id")
+    if rel_id and rel_id in para.part.rels:
+        rel = para.part.rels[rel_id]
+        if rel.reltype == RT.HYPERLINK:
+            return f"[{text}]({rel.target_ref})"
+
+    anchor = hyperlink.get(f"{{{W_NS}}}anchor")
+    if anchor:
+        return f"[{text}](#{anchor})"
+
+    return text
 
 
 def _extract_omml_from_paragraph(para) -> list:
@@ -229,29 +276,81 @@ def _is_potential_formula(text: str) -> bool:
     return False
 
 
+def _get_list_marker(para) -> str:
+    p_pr = para._element.find(f"{{{W_NS}}}pPr")
+    if p_pr is None:
+        return ""
+    num_pr = p_pr.find(f"{{{W_NS}}}numPr")
+    if num_pr is None:
+        return ""
+
+    num_id_elem = num_pr.find(f"{{{W_NS}}}numId")
+    ilvl_elem = num_pr.find(f"{{{W_NS}}}ilvl")
+    num_id = num_id_elem.get(f"{{{W_NS}}}val") if num_id_elem is not None else ""
+    ilvl = ilvl_elem.get(f"{{{W_NS}}}val", "0") if ilvl_elem is not None else "0"
+    num_fmt = ""
+
+    if num_id and num_id != "0":
+        try:
+            numbering = para.part.numbering_part.element
+        except (AttributeError, NotImplementedError):
+            numbering = None
+        if numbering is not None:
+            num_elem = next(
+                (num for num in numbering.findall(f"{{{W_NS}}}num")
+                 if num.get(f"{{{W_NS}}}numId") == num_id),
+                None,
+            )
+            if num_elem is not None:
+                abstract_id_elem = num_elem.find(f"{{{W_NS}}}abstractNumId")
+                abstract_id = abstract_id_elem.get(f"{{{W_NS}}}val") if abstract_id_elem is not None else ""
+                abstract_elem = next(
+                    (abstract for abstract in numbering.findall(f"{{{W_NS}}}abstractNum")
+                     if abstract.get(f"{{{W_NS}}}abstractNumId") == abstract_id),
+                    None,
+                )
+                if abstract_elem is not None:
+                    level_elem = next(
+                        (level for level in abstract_elem.findall(f"{{{W_NS}}}lvl")
+                         if level.get(f"{{{W_NS}}}ilvl") == ilvl),
+                        None,
+                    )
+                    if level_elem is not None:
+                        num_fmt_elem = level_elem.find(f"{{{W_NS}}}numFmt")
+                        if num_fmt_elem is not None:
+                            num_fmt = num_fmt_elem.get(f"{{{W_NS}}}val", "")
+
+    if num_fmt and num_fmt not in {"bullet", "none"}:
+        return "1."
+    return "-"
+
+
 def _extract_images_from_paragraph(para) -> list:
     """Извлекает изображения из параграфа, сохраняет во временные файлы."""
     images = []
-    for run in para.runs:
-        for elem in run._element:
-            if elem.tag.endswith("}drawing"):
-                blips = elem.findall(".//{http://schemas.openxmlformats.org/drawingml/2006/main}blip")
-                for blip in blips:
-                    embed_id = blip.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed")
-                    if embed_id and embed_id in para.part.rels:
-                        rel = para.part.rels[embed_id]
-                        if "image" in rel.reltype:
-                            img_blob = rel.target_part.blob
-                            try:
-                                img = Image.open(io.BytesIO(img_blob))
-                                os.makedirs(TEMP_DIR, exist_ok=True)
-                                import time
-                                img_name = f"docx_img_{int(time.time()*1000000)}_{len(images)}.png"
-                                img_path = os.path.join(TEMP_DIR, img_name)
-                                img.save(img_path, "PNG")
-                                images.append(img_path)
-                            except Exception:
-                                pass
+    seen_rel_ids = set()
+    for elem in para._element.iter():
+        rel_id = None
+        if elem.tag == f"{{{A_NS}}}blip":
+            rel_id = elem.get(f"{{{R_NS}}}embed")
+        elif elem.tag == f"{{{V_NS}}}imagedata":
+            rel_id = elem.get(f"{{{R_NS}}}id")
+        if not rel_id or rel_id in seen_rel_ids or rel_id not in para.part.rels:
+            continue
+        seen_rel_ids.add(rel_id)
+        rel = para.part.rels[rel_id]
+        if "image" not in rel.reltype:
+            continue
+        try:
+            with Image.open(io.BytesIO(rel.target_part.blob)) as img:
+                os.makedirs(TEMP_DIR, exist_ok=True)
+                import time
+                img_name = f"docx_img_{int(time.time()*1000000)}_{len(images)}.png"
+                img_path = os.path.join(TEMP_DIR, img_name)
+                img.save(img_path, "PNG")
+            images.append(img_path)
+        except Exception:
+            pass
     return images
 
 
@@ -259,10 +358,20 @@ def _process_table(table, ocr_client) -> str:
     """Конвертирует таблицу DOCX в Markdown-таблицу."""
 
     rows = []
+    processed_cells = set()
     for row in table.rows:
         cells = []
         for cell in row.cells:
-            cell_text = cell.text.strip().replace("\n", " ").replace("|", "\\|")
+            if cell._tc in processed_cells:
+                cells.append("")
+                continue
+            processed_cells.add(cell._tc)
+            paragraph_results = [
+                _process_paragraph(para, ocr_client).strip()
+                for para in cell.paragraphs
+            ]
+            cell_text = "<br>".join(result for result in paragraph_results if result)
+            cell_text = cell_text.replace("\n", " ").replace("|", "\\|")
             cells.append(cell_text)
         rows.append(cells)
 
