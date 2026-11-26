@@ -7,12 +7,12 @@
   "run_rows": 3,
   "expected_questions": 3,
   "complete": true,
-  "fallback_groups": 2,
+  "fallback_groups": 0,
   "empty_groups": 0,
-  "wall_time_s": 91.24,
-  "llm_tokens_total": 134980.0,
-  "llm_tokens_mean_per_group": 67490.0,
-  "llm_tokens_mean_per_question": 44993.333333333336,
+  "wall_time_s": 80.2,
+  "llm_tokens_total": 116306.0,
+  "llm_tokens_mean_per_group": 58153.0,
+  "llm_tokens_mean_per_question": 38768.666666666664,
   "concurrency": 2,
   "query_group_policy": "one representative query per normalized group"
 }

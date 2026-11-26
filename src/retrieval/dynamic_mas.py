@@ -27,7 +27,8 @@ from retrieval.coordinated import SharedCandidatePool, _json_object
 from retrieval.engine import RetrievalEngine
 
 AGENT_TIMEOUT_SECONDS = 180
-MAX_AGENT_TURNS = 24
+MAX_AGENT_TURNS = 32
+MAX_CONTRACTS = 3
 
 
 def _norm(value: str) -> str:
@@ -255,6 +256,13 @@ class DynamicMASAgent:
         self.memory.actions.append(f"critic:{message['type']}")
         if value is None:
             runtime.failures.append({"agent": self.name, "stage": "critic", "error": meta["error"]})
+            open_contracts = any(contract.status in ("open", "awarded") for contract in runtime.contracts.values())
+            if not open_contracts and not runtime.stop_in_progress():
+                return [runtime.message(
+                    "stop_proposal", self.name, "blackboard",
+                    {"proposal_id": f"S{next(runtime.proposal_ids):03d}", "reason": "critic_error_best_effort"},
+                    message["message_id"],
+                )]
             return []
         result = dict(value)
         result["meta"] = meta
@@ -266,16 +274,19 @@ class DynamicMASAgent:
         system = (
             f"Ты {self.name}-agent, голосующий за завершение retrieval. "
             "Принимай завершение только если по локальным наблюдениям покрыты обязательные аспекты. "
+            "Если аспект имеет status=blocked после исчерпания контрактов, поддержи best-effort завершение и не повторяй тот же gap. "
             "При отказе обязан назвать конкретный непокрытый gap. Только JSON: "
             '{"accept":true,"reason":"...","gap":{"aspect":"...","need":"...","kind":"..."}}.'
         )
         human = f"Вопрос: {runtime.query}\nГраф: {json.dumps(runtime.aspects, ensure_ascii=False)}\nЛокальные чанки:\n{self._known_text(runtime)}"
-        value, meta = await self._json(runtime, system, human, ("accept", "reason", "gap"))
+        value, meta = await self._json(runtime, system, human, ("accept", "reason"))
         if value is None:
-            value = {"accept": False, "reason": meta["error"], "gap": None}
+            runtime.failures.append({"agent": self.name, "stage": "stop_vote", "error": meta["error"]})
+            value = {"accept": False, "reason": meta["error"], "gap": None, "abstain": True}
         return [runtime.message("stop_ballot", self.name, "blackboard", {
             "proposal_id": message["payload"]["proposal_id"],
             "accept": bool(value.get("accept")),
+            "abstain": bool(value.get("abstain", False)),
             "reason": str(value.get("reason", "")),
             "gap": value.get("gap"),
         }, message["message_id"], tokens=meta["tokens"], repair=meta["repair"])]
@@ -286,8 +297,8 @@ class DynamicMASAgent:
             "Сначала прямые доказательства, затем необходимые зависимости; покрой все accepted аспекты и не выбирай challenged aliases. "
             "Если граф неполон, верни gaps, но всё равно укажи 10 текущих лучших candidates. Не создавай gaps для уже покрытых аспектов, "
             "гипотетических уточнений или вопросов вне исходного запроса; условные варианты ответа не требуют единственного универсального документа. "
-            "Всегда возвращай ровно 10 selected_chunks при наличии 10 candidates. "
-            "Только JSON: {\"selected_chunks\":[{\"alias\":\"C001\",\"relevance\":2,\"aspect\":\"...\"}],"
+            "Всегда возвращай ровно 10 ranked_aliases при наличии 10 candidates. "
+            "Только JSON: {\"ranked_aliases\":[\"C001\",\"C002\"],"
             "\"gaps\":[{\"aspect\":\"...\",\"need\":\"...\",\"kind\":\"...\"}],\"reason\":\"...\"}."
         )
         human = (
@@ -298,24 +309,18 @@ class DynamicMASAgent:
         )
         def validate(value):
             valid = set()
-            for item in value.get("selected_chunks", []):
-                if not isinstance(item, dict):
-                    continue
-                alias = str(item.get("alias", ""))
+            for alias in value.get("ranked_aliases", []):
+                alias = str(alias)
                 chunk_id = runtime.pool.chunk_id(alias)
-                if (
-                    chunk_id and alias not in runtime.challenged
-                    and item.get("relevance") in (1, 2)
-                    and str(item.get("aspect", "")).strip()
-                ):
+                if chunk_id and alias not in runtime.challenged:
                     valid.add(chunk_id)
             expected = min(MAX_OUTPUT_CHUNKS, len(runtime.pool.ids))
-            if len(valid) != expected:
-                return f"Нужно ровно {expected} валидных уникальных aliases с relevance и aspect"
+            if expected and not valid:
+                return "Нужен хотя бы один валидный уникальный ranked_alias"
             return ""
 
         value, meta = await self._json(
-            runtime, system, human, ("selected_chunks", "gaps", "reason"), validator=validate,
+            runtime, system, human, ("ranked_aliases", "gaps", "reason"), validator=validate,
         )
         if value is None:
             runtime.failures.append({"agent": self.name, "stage": "synthesizer", "error": meta["error"]})
@@ -341,11 +346,15 @@ class DynamicMASRuntime:
         self.challenged = {}
         self.failures = []
         self.stop_votes = {}
+        self.stop_decisions = {}
         self.stop_expected = {}
         self.llm_tokens = 0
         self.initial_reviewed = set()
         self.final_ids = None
+        self.abort = False
         self.final_gaps = []
+        self.ignored_final_gaps = []
+        self.synthesis_revisions = 0
         self.termination = "event_queue_empty"
         self.ids = itertools.count(1)
         self.contract_ids = itertools.count(1)
@@ -384,7 +393,10 @@ class DynamicMASRuntime:
             self.apply_critic(message)
         elif type_ in ("bid", "refuse"):
             self.apply_bid(message)
-        elif type_ in ("contract_error", "agent_error", "synth_error"):
+        elif type_ == "synth_error":
+            self.abort = True
+            self.termination = "synthesis_failed"
+        elif type_ in ("contract_error", "agent_error"):
             if type_ == "contract_error":
                 contract = self.contracts.get(message["payload"].get("contract_id"))
                 if contract:
@@ -410,7 +422,7 @@ class DynamicMASRuntime:
         key = _norm(aspect)
         if not key:
             return
-        state = self.aspects.get(key, {"aspect": aspect, "need": gap.get("need", aspect), "status": "open", "covered_by": []})
+        state = self.aspects.get(key, {"aspect": aspect, "need": gap.get("need", aspect), "kind": gap.get("kind", "semantic"), "status": "open", "covered_by": []})
         if self.has_valid_coverage(state):
             return
         state["status"] = "open"
@@ -419,6 +431,16 @@ class DynamicMASRuntime:
         for contract in self.contracts.values():
             if _norm(contract.aspect) == key and contract.status in ("open", "awarded"):
                 return
+        if len(self.contracts) >= MAX_CONTRACTS:
+            state["status"] = "blocked"
+            state["blocked_reason"] = "global_contract_budget"
+            return
+        aspect_contracts = [contract for contract in self.contracts.values() if _norm(contract.aspect) == key]
+        if len(aspect_contracts) >= 2:
+            if not self.has_valid_coverage(state):
+                state["status"] = "blocked"
+                state["blocked_reason"] = "contract_limit_without_valid_coverage"
+            return
         kind = str(gap.get("kind", "semantic"))
         if kind in ("exception", "cross_reference"):
             specialist = f"specialist_{kind}"
@@ -438,6 +460,22 @@ class DynamicMASRuntime:
             for proposal_id in self.stop_votes
         )
         return incomplete or any(message["type"] == "synthesize" for message in self.queue)
+
+    def reconcile_aspect_contracts(self, caused_by):
+        for key, state in list(self.aspects.items()):
+            if state["status"] != "open":
+                continue
+            contracts = [contract for contract in self.contracts.values() if _norm(contract.aspect) == key]
+            if any(contract.status in ("open", "awarded") for contract in contracts):
+                continue
+            if len(contracts) >= 2:
+                state["status"] = "blocked"
+                state["blocked_reason"] = "no_valid_coverage_after_two_contracts"
+            else:
+                self.open_gap({
+                    "aspect": state["aspect"], "need": state["need"],
+                    "kind": state.get("kind", "semantic"),
+                }, "critic_reconciliation", caused_by)
 
     def apply_critic(self, message):
         value = message["payload"]
@@ -461,18 +499,30 @@ class DynamicMASRuntime:
                 continue
             key = _norm(item["aspect"])
             state = self.aspects.setdefault(key, {"aspect": item["aspect"], "need": item["aspect"], "status": "open", "covered_by": []})
+            existing = list(dict.fromkeys(state.get("covered_by", [])))
+            for alias in item.get("covered_by", []):
+                if alias in self.claims and alias not in self.challenged:
+                    self.claims[alias]["accepted"] = True
+                    if alias not in existing:
+                        existing.append(alias)
             state["covered_by"] = [
-                alias for alias in item.get("covered_by", [])
+                alias for alias in existing
                 if alias in self.claims and self.claims[alias].get("accepted") and alias not in self.challenged
             ]
             if item.get("status") == "covered" and state["covered_by"]:
                 state["status"] = "covered"
-            elif item.get("status") in ("covered", "open"):
+            elif item.get("status") == "open" and not self.has_valid_coverage(state):
+                state["status"] = "open"
+            elif not state["covered_by"]:
                 state["status"] = "open"
         for gap in value.get("gaps", []):
             if isinstance(gap, dict) and gap.get("need"):
                 self.open_gap(gap, "critic", message["message_id"])
-        if value.get("stop"):
+        self.reconcile_aspect_contracts(message["message_id"])
+        terminal_graph = bool(self.aspects) and all(
+            state["status"] in ("covered", "blocked") for state in self.aspects.values()
+        )
+        if value.get("stop") or terminal_graph:
             open_contracts = any(contract.status in ("open", "awarded") for contract in self.contracts.values())
             if not open_contracts and not self.open_aspects() and self.initial_reviewed >= {"dense", "bm25"} and not self.stop_in_progress():
                 proposal = self.message("stop_proposal", "critic", "blackboard", {"proposal_id": f"S{next(self.proposal_ids):03d}"}, message["message_id"])
@@ -515,50 +565,67 @@ class DynamicMASRuntime:
         expected = self.stop_expected[payload["proposal_id"]]
         if set(proposal) != expected:
             return
-        if all(ballot["accept"] for ballot in proposal.values()):
+        decisive = [ballot for ballot in proposal.values() if not ballot.get("abstain")]
+        accept_votes = sum(ballot["accept"] for ballot in decisive)
+        reject_votes = len(decisive) - accept_votes
+        open_contracts = any(contract.status in ("open", "awarded") for contract in self.contracts.values())
+        accepted = accept_votes >= reject_votes and not open_contracts
+        self.stop_decisions[payload["proposal_id"]] = {
+            "accept_votes": accept_votes, "reject_votes": reject_votes,
+            "abstentions": len(proposal) - len(decisive),
+            "proposer_vote": "accept", "accepted": accepted,
+            "rule": "critic proposer breaks scout tie; new active contract blocks synthesis",
+        }
+        if accepted:
             self.queue.append(self.message("synthesize", "blackboard", "synthesizer", {"proposal_id": payload["proposal_id"]}, message["message_id"]))
 
     def apply_final(self, message):
         value = message["payload"]
         self.final_gaps = []
+        allow_revision = self.synthesis_revisions < 1 and len(self.contracts) < MAX_CONTRACTS
         for gap in value.get("gaps", []):
             if isinstance(gap, dict) and gap.get("need"):
                 aspect = str(gap.get("aspect") or gap["need"])
                 state = self.aspects.get(_norm(aspect), {})
-                if self.has_valid_coverage(state):
+                if self.has_valid_coverage(state) or state.get("status") == "blocked":
+                    continue
+                if not allow_revision:
+                    self.ignored_final_gaps.append(gap)
                     continue
                 self.final_gaps.append(gap)
                 self.open_gap(gap, "synthesizer", message["message_id"])
         if self.final_gaps:
+            self.synthesis_revisions += 1
             return
         selected = []
         seen = set()
-        for item in value.get("selected_chunks", []):
-            if not isinstance(item, dict):
-                continue
-            alias = str(item.get("alias", ""))
+        challenged_ids = {self.pool.chunk_id(alias) for alias in self.challenged}
+        for alias in value.get("ranked_aliases", []):
+            alias = str(alias)
             chunk_id = self.pool.chunk_id(alias)
-            if not chunk_id or chunk_id in seen or chunk_id in {self.pool.chunk_id(a) for a in self.challenged}:
-                continue
-            relevance = item.get("relevance")
-            aspect = str(item.get("aspect", "")).strip()
-            if relevance not in (1, 2) or not aspect:
+            if not chunk_id or chunk_id in seen or chunk_id in challenged_ids:
                 continue
             seen.add(chunk_id)
+            claim = self.claims.get(alias, {})
+            aspect = str(claim.get("aspect", "")).strip()
+            if not aspect:
+                aspect = next(
+                    (state["aspect"] for state in self.aspects.values() if alias in state.get("covered_by", [])),
+                    "evidence",
+                )
+            relevance = claim.get("relevance") if claim.get("relevance") in (1, 2) else 1
             selected.append({"chunk_id": chunk_id, "alias": alias, "relevance": relevance, "aspect": aspect})
-        if len(selected) > MAX_OUTPUT_CHUNKS:
-            self.failures.append({"agent": "synthesizer", "stage": "validation", "error": "more_than_10"})
-            return
+        selected = selected[:MAX_OUTPUT_CHUNKS]
         if not selected and self.pool.ids:
             self.failures.append({"agent": "synthesizer", "stage": "validation", "error": "empty_selection"})
             return
         self.final_ids = selected
 
     def open_aspects(self):
-        return [value for value in self.aspects.values() if value["status"] != "covered"]
+        return [value for value in self.aspects.values() if value["status"] == "open"]
 
     async def run(self):
-        while self.queue and not self.final_ids and len(self.execution_trace) < MAX_AGENT_TURNS:
+        while self.queue and not self.final_ids and not self.abort and len(self.execution_trace) < MAX_AGENT_TURNS:
             message = self.queue.popleft()
             batch = [message]
             parallel_types = {"initial_evidence", "cfp", "peer_report", "stop_vote"}
@@ -576,7 +643,9 @@ class DynamicMASRuntime:
                 })
                 for item in outgoing:
                     self.post(item)
-        if self.final_ids is not None:
+        if self.abort and self.final_ids is None:
+            self.termination = "synthesis_failed"
+        elif self.final_ids is not None:
             self.termination = "final_selection"
         elif self.queue:
             self.termination = "max_agent_turns"
@@ -674,13 +743,15 @@ class DynamicMASRetriever:
         return {
             "chunks": chunks,
             "retriever": "dynamic_mas",
-            "fallback_used": bool(runtime.failures) or not chunks or runtime.final_ids is None,
+            "fallback_used": runtime.final_ids is None or not chunks,
             "error": None if chunks else f"Synthesis did not complete: {runtime.termination}",
             "trace": {
                 "query": query,
                 "protocol": "event_driven_contract_net_evidence_graph",
                 "termination": runtime.termination,
                 "synthesis_completed": runtime.final_ids is not None,
+                "synthesis_revisions": runtime.synthesis_revisions,
+                "ignored_final_gaps": runtime.ignored_final_gaps,
                 "evidence_graph": runtime.aspects,
                 "contracts": {
                     key: {
@@ -692,6 +763,7 @@ class DynamicMASRetriever:
                 "claims": runtime.claims,
                 "challenged": runtime.challenged,
                 "stop_votes": runtime.stop_votes,
+                "stop_decisions": runtime.stop_decisions,
                 "messages": runtime.message_log,
                 "posted_agent_messages": runtime.messages,
                 "execution_trace": runtime.execution_trace,
@@ -699,8 +771,13 @@ class DynamicMASRetriever:
                 "active_agents": list(runtime.agents),
                 "active_edges": active_edges,
                 "failures": runtime.failures,
+                "degraded": bool(runtime.failures),
+                "recovered_errors": bool(runtime.failures) and runtime.final_ids is not None,
                 "initial_reviewed": sorted(runtime.initial_reviewed),
                 "backfill_count": backfill_count,
+                "selection_sanitized": backfill_count > 0,
+                "partial_coverage": any(state["status"] == "blocked" for state in runtime.aspects.values()),
+                "unresolved_aspects": [state for state in runtime.aspects.values() if state["status"] == "blocked"],
                 "candidate_ledger": runtime.pool.ledger,
                 "agent_memory": {
                     name: {
