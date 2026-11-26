@@ -18,6 +18,7 @@ RETRIEVER_CARDS = {
     "multiagent": "multiagent_retriever",
     "multiagent_v2": "multiagent_retriever_v2",
     "multiagent_coordinated": "multiagent_coordinated",
+    "dynamic_mas": "dynamic_mas",
     "baseline_reranker": "baseline_reranker",
 }
 
