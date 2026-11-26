@@ -1,0 +1,5 @@
+{
+  "dim": 1024,
+  "ntotal": 5359,
+  "model": "jinaai/jina-embeddings-v5-text-small"
+}

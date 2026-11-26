@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "checks": {
+    "questions_exact": 630,
+    "qrels_unique": 1047,
+    "evidence_unique": 1047,
+    "new_review_pairs": 39,
+    "new_accepted_pairs": 27,
+    "questions_with_gt": 617,
+    "coverage_rows": 630,
+    "unresolved_rows": 28,
+    "duplicate_query_relevance_conflicts": 0,
+    "source_issues": 0,
+    "indices_unchanged": true
+  },
+  "manifest_sha256": "bf39fb64fea3bb8e186f15ca4c814953d277fdf32405fac7acf20d7f8e293a36"
+}

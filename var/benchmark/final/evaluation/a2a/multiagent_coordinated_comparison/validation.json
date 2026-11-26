@@ -1,0 +1,39 @@
+{
+  "system": "multiagent_coordinated",
+  "benchmark": "v3.1",
+  "questions": 630,
+  "query_groups": 556,
+  "answerable_unique_queries": 544,
+  "model": "qwen3.6-35b",
+  "temperature": 0,
+  "concurrency": 2,
+  "complete": true,
+  "output_chunks_min": 10,
+  "output_chunks_mean": 10.0,
+  "output_below_10": 0,
+  "raw_index_hits_mean": 41.16,
+  "raw_index_hits_max": 50,
+  "raw_index_hits_limit": 60,
+  "fallback_groups": 4,
+  "fallback_rate": 0.007194,
+  "fallback_stages": {"planner": 4},
+  "empty_groups": 0,
+  "wall_time_s": 7742.32,
+  "llm_tokens_total": 19649924,
+  "paired_bootstrap": {
+    "seed": 20261126,
+    "samples": 5000,
+    "aggregation": "unique_query_macro_delta_vs_baseline_reranker",
+    "metrics": {
+      "hit_rate@5": {"delta": 0.025735, "ci95": [0.003676, 0.049632]},
+      "recall@5": {"delta": 0.025184, "ci95": [0.005912, 0.044426]},
+      "ndcg@5": {"delta": 0.02725, "ci95": [0.008164, 0.046445]},
+      "mrr@5": {"delta": 0.019669, "ci95": [-0.005393, 0.044609]},
+      "hit_rate@10": {"delta": 0.011029, "ci95": [-0.007353, 0.03125]},
+      "recall@10": {"delta": 0.016098, "ci95": [0.001361, 0.031313]},
+      "ndcg@10": {"delta": 0.02325, "ci95": [0.006157, 0.040571]},
+      "mrr@10": {"delta": 0.017567, "ci95": [-0.006622, 0.041302]}
+    }
+  },
+  "comparison": "var/benchmark/final/evaluation/a2a/multiagent_coordinated_comparison/comparison.json"
+}

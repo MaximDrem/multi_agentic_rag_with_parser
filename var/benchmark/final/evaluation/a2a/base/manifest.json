@@ -1,0 +1,18 @@
+{
+  "system": "base",
+  "agent_card": "base_retriever",
+  "url": "http://localhost:8102",
+  "protocol": "A2A v1.0",
+  "query_groups": 556,
+  "run_rows": 630,
+  "expected_questions": 630,
+  "complete": true,
+  "fallback_groups": 0,
+  "empty_groups": 0,
+  "wall_time_s": 117.36,
+  "llm_tokens_total": 0,
+  "llm_tokens_mean_per_group": 0.0,
+  "llm_tokens_mean_per_question": 0.0,
+  "concurrency": 8,
+  "query_group_policy": "one representative query per normalized group"
+}

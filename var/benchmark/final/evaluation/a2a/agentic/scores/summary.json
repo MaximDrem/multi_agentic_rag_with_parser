@@ -1,0 +1,34 @@
+{
+  "run": "var/benchmark/final/evaluation/a2a/agentic/run.jsonl",
+  "qrels": "var/benchmark/final/qrels.jsonl",
+  "questions_total": 630,
+  "benchmark_questions_total": 630,
+  "subset": true,
+  "run_rows": 630,
+  "answerable_rows": 617,
+  "answerable_unique_queries": 544,
+  "rows_without_qrels": 13,
+  "row_macro": {
+    "hit_rate@5": 0.8282009724473258,
+    "recall@5": 0.6994211623060894,
+    "ndcg@5": 0.6678398329081282,
+    "mrr@5": 0.7283900594273366,
+    "hit_rate@10": 0.8363047001620746,
+    "recall@10": 0.708296673612719,
+    "ndcg@10": 0.6717129004171951,
+    "mrr@10": 0.7295265107663811
+  },
+  "unique_query_macro": {
+    "hit_rate@5": 0.8272058823529411,
+    "recall@5": 0.7019782913165266,
+    "ndcg@5": 0.6702932243217334,
+    "mrr@5": 0.7270220588235294,
+    "hit_rate@10": 0.8363970588235294,
+    "recall@10": 0.7108193277310925,
+    "ndcg@10": 0.673957503148029,
+    "mrr@10": 0.7283110119047619
+  },
+  "ndcg_gain": "2^relevance-1",
+  "duplicate_policy": "identical ranking per normalized query; union qrels with maximum relevance",
+  "empty_qrel_policy": "excluded from metric denominators and reported separately"
+}

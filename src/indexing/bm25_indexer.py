@@ -30,7 +30,7 @@ class BM25Indexer:
             key=lambda x: x[1],
             reverse=True,
         )[:top_k]
-        return [(i, s) for i, s in top_idx if s >= score_threshold]
+        return [(i, s) for i, s in top_idx if s > 0.0 and s >= score_threshold]
 
     def save(self, path: str | Path) -> None:
         path = Path(path)

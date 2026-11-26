@@ -64,7 +64,7 @@ _DYNAMIC_PROMPT_TEMPLATE = (
     "- приветствие, вопрос о твоих возможностях, мета-вопрос о системе\n"
     "- запрос не по нормативно-правовым документам РФ\n"
     "- простой вопрос не требующий поиска\n\n"
-    "Агенты с тегом 'shared-corpus' работают с одним корпусом — вызывай обоих для полноты.\n"
+    "Агент с тегом 'shared-corpus' — выбранный retrieval-сервис единого корпуса: вызови его для поиска. Не требуй несколько retriever-агентов.\n"
     "Агенты с тегом 'intermediate' выдают промежуточный артефакт — не останавливайся на них.\n"
     "Агенты с тегом 'final' выдают готовый ответ — это терминальная точка цепочки.\n\n"
     "Агенты:\n{agent_cards_summary}"
@@ -73,7 +73,7 @@ _DYNAMIC_PROMPT_TEMPLATE = (
 
 class AgentInput(BaseModel):
     query: str = Field(description="Запрос к агенту")
-    data_from: list[str] | None = Field(default=None, description="Имена агентов, чьи данные нужно передать этому агенту. Пример: ['retriever_embedding', 'retriever_bm25']. Передавай только те данные, которые реально нужны агенту. None или [] — ничего не передавать")
+    data_from: list[str] | None = Field(default=None, description="Имена агентов, чьи данные нужно передать этому агенту. Для summarizer укажи имя фактически вызванного retriever-инструмента. Передавай только реально нужные данные. None или [] — ничего не передавать")
 
 
 class ForwardAgentArtifactsInput(BaseModel):

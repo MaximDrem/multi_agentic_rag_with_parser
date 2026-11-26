@@ -1,10 +1,16 @@
 .env
 PLAN.md
 venv/
-var/
+.data/
+prompts/
+var/archive/
+var/logs/
+var/logs_benchmark/
+var/temp_images/
 *.pyc
 __pycache__/
 Дременков_МП_*
 generate_docx.py
 AGENTS.md
 *.ipynb
+var/*.json

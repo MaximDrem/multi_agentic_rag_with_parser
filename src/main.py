@@ -31,7 +31,7 @@ async def create_orchestrator_server():
         AgentSkill(
             id="orchestrate_rag",
             name="Orchestrate multi-agent RAG pipeline",
-            description="Receives user queries, discovers sub-agents via A2A agent cards, delegates to retrievers in parallel, forwards results to summarizer via Part.data, and delivers the final answer.",
+            description="Receives user queries, discovers the selected unified retriever and summarizer via A2A agent cards, delegates retrieval, forwards ranked chunks via Part.data, and delivers the final answer.",
             input_modes=["text", "data"],
             output_modes=["text", "data"],
             examples=["Найди информацию о бюджетном кодексе", "Какие НПА регулируют финансовые соглашения?", "Подготовь ответ о порядке отчетности"],
@@ -43,7 +43,7 @@ async def create_orchestrator_server():
         url=ORCHESTRATOR_URL,
         executor=executor,
         skills=skills,
-        description="Multi-agent RAG orchestrator (A2A v1.0): coordinates semantic + keyword retrieval and summarization via agent cards.",
+        description="A2A RAG orchestrator: coordinates the selected unified retrieval service and summarization via agent cards.",
     ), orch
 
 

@@ -1,0 +1,18 @@
+{
+  "system": "agentic_alpha",
+  "agent_card": "agentic_retriever_alpha",
+  "url": "http://localhost:8102",
+  "protocol": "A2A v1.0",
+  "query_groups": 556,
+  "run_rows": 630,
+  "expected_questions": 630,
+  "complete": true,
+  "fallback_groups": 2,
+  "empty_groups": 0,
+  "wall_time_s": 2693.89,
+  "llm_tokens_total": 5752663.0,
+  "llm_tokens_mean_per_group": 10346.51618705036,
+  "llm_tokens_mean_per_question": 9131.211111111112,
+  "concurrency": 4,
+  "query_group_policy": "one representative query per normalized group"
+}

@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "chunks": 5359,
+  "corpus_sha256": "c51f31fcf0b97dc1b0f33fad885c21a96a72ce5ee272e9feb7bcbfd2f8b32712",
+  "chunks_model_dump_identical": true,
+  "faiss": 5359,
+  "bm25": 5359,
+  "dim": 1024,
+  "faiss_vector_sha256": "b11a042264b9c4afc3e758e1d8211afc9852580df544dbe394ff9381f3c47723",
+  "previous_faiss_vector_sha256": "b11a042264b9c4afc3e758e1d8211afc9852580df544dbe394ff9381f3c47723",
+  "faiss_vectors_identical": true,
+  "faiss_max_abs_diff": 0.0,
+  "faiss_mean_abs_diff": 0.0,
+  "bm25_doc_len_sha256": "be1e80c44e3a7b7d07f076b39ccbe58f8a1bf2eb8009f4fe84c3bd6fd91d2a1e",
+  "qrels": 1047,
+  "evidence_substrings_valid": true
+}

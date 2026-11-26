@@ -19,17 +19,28 @@ load_dotenv()
 from common.config import (
     ORCHESTRATOR_PORT,
     ORCHESTRATOR_URL,
-    RETRIEVER_EMB_PORT,
-    RETRIEVER_BM25_PORT,
+    RETRIEVER_PORT,
+    RETRIEVER_URL,
     SUMMARIZER_PORT,
+    SUMMARIZER_URL,
 )
 
-AGENT_PORTS = {
-    "orchestrator": ORCHESTRATOR_PORT,
-    "retriever_embedding": RETRIEVER_EMB_PORT,
-    "retriever_bm25": RETRIEVER_BM25_PORT,
-    "summarizer": SUMMARIZER_PORT,
+RETRIEVER_SERVICES = {
+    "1": ("base", "base_retriever", "agents.base_retriever"),
+    "2": ("agentic", "agentic_retriever", "agents.agentic_retriever"),
+    "3": ("agentic_alpha", "agentic_retriever_alpha", "agents.agentic_retriever_alpha"),
+    "4": ("multiagent", "multiagent_retriever", "agents.multiagent_retriever"),
+    "5": ("baseline_reranker", "baseline_reranker", "agents.baseline_reranker"),
 }
+_selected_retriever = os.getenv("RETRIEVER_TYPE", "base")
+
+
+def current_agent_ports() -> dict[str, int]:
+    return {
+        "orchestrator": ORCHESTRATOR_PORT,
+        "retriever": RETRIEVER_PORT,
+        "summarizer": SUMMARIZER_PORT,
+    }
 
 INDEX_FILES = [
     Path(os.getenv("CHUNKS_PATH", "./var/data/chunks.pkl")),
@@ -58,11 +69,11 @@ def is_port_open(port: int) -> bool:
 
 
 def any_agent_running() -> bool:
-    return any(is_port_open(p) for p in AGENT_PORTS.values())
+    return any(is_port_open(p) for p in current_agent_ports().values())
 
 
 def all_agents_running() -> bool:
-    return all(is_port_open(p) for p in AGENT_PORTS.values())
+    return all(is_port_open(p) for p in current_agent_ports().values())
 
 
 def indices_exist() -> bool:
@@ -91,6 +102,7 @@ def menu():
     status_indexed = "[INDEXED]" if indexed else "[no index]"
     status_parsed = "[PARSED]" if parsed else "[no parse]"
     print(f"  Agents: {status_running}  |  Index: {status_indexed}  |  Parse: {status_parsed}")
+    print(f"  Retriever: {_selected_retriever}")
     print("=" * 60)
     print(f"  1. {'Re-parse documents' if parsed else 'Parse documents'}")
     print(f"  2. {'Re-index documents' if indexed else 'Index documents'}")
@@ -223,49 +235,65 @@ def do_indexing():
 
 
 def start_agents():
+    global _selected_retriever
     if any_agent_running():
         print("\nSome agents are already running.")
         return
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    print("\nSelect retriever:")
+    for key, (retriever_type, _, _) in RETRIEVER_SERVICES.items():
+        print(f"  {key}. {retriever_type}")
+    choice = input("> ").strip() or "1"
+    if choice not in RETRIEVER_SERVICES:
+        print("Unknown retriever choice.")
+        return
+    _selected_retriever, service_name, module = RETRIEVER_SERVICES[choice]
 
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     procs_def = [
-        ("retriever_embedding", RETRIEVER_EMB_PORT, "agents.retriever_embedding"),
-        ("retriever_bm25", RETRIEVER_BM25_PORT, "agents.retriever_bm25"),
+        (service_name, RETRIEVER_PORT, module),
         ("summarizer", SUMMARIZER_PORT, "agents.summarizer"),
         ("orchestrator", ORCHESTRATOR_PORT, "main"),
     ]
+    sub_env = {
+        **os.environ,
+        "PYTHONPATH": str(PROJECT_ROOT / "src"),
+        "RETRIEVER_TYPE": _selected_retriever,
+        "RETRIEVER_PORT": str(RETRIEVER_PORT),
+        "RETRIEVER_URL": RETRIEVER_URL,
+    }
 
-    sub_env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")}
-
-    print("\nStarting agents...")
-    for name, port, module in procs_def:
+    print(f"\nStarting agents with {_selected_retriever} retriever...")
+    for name, port, module_name in procs_def:
+        proc_env = dict(sub_env)
+        if name == "orchestrator":
+            proc_env["SUB_AGENT_URLS"] = f"{RETRIEVER_URL},{SUMMARIZER_URL}"
         log_path = LOG_DIR / f"{name}.log"
         proc = subprocess.Popen(
-            [VENV_PYTHON, "-m", module],
+            [VENV_PYTHON, "-m", module_name],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd=str(PROJECT_ROOT),
-            env=sub_env,
+            env=proc_env,
         )
         _agent_procs[name] = proc
         print(f"  {name}: PID={proc.pid}  port={port}  log={log_path}")
 
     print("\nWaiting for readiness...")
-    for attempt in range(1, 6):
-        all_ok = True
-        for name, port in AGENT_PORTS.items():
-            ok = is_port_open(port)
-            if not ok:
-                all_ok = False
-        if all_ok:
+    for _ in range(1, 7):
+        if all_agents_running():
             break
         time.sleep(10)
-    for name, port in AGENT_PORTS.items():
-        ok = "OK" if is_port_open(port) else "NOT READY"
-        print(f"  {name}:{port} [{ok}]")
-
-    print("\nAll agents started.")
+    not_ready = []
+    for name, port in current_agent_ports().items():
+        ok = is_port_open(port)
+        print(f"  {name}:{port} [{'OK' if ok else 'NOT READY'}]")
+        if not ok:
+            not_ready.append(name)
+    if not_ready:
+        print(f"\nAgents not ready: {', '.join(not_ready)}. Inspect var/logs/.")
+    else:
+        print("\nAll agents started.")
 
 
 def stop_agents():
@@ -278,7 +306,7 @@ def stop_agents():
             proc.kill()
     _agent_procs.clear()
 
-    for port in AGENT_PORTS.values():
+    for port in current_agent_ports().values():
         pid = _pid_on_port(port)
         if pid:
             try:
@@ -287,7 +315,7 @@ def stop_agents():
                 pass
 
     time.sleep(1)
-    remaining = sum(1 for p in AGENT_PORTS.values() if is_port_open(p))
+    remaining = sum(1 for p in current_agent_ports().values() if is_port_open(p))
     if remaining:
         print(f"\nWarning: {remaining} port(s) still occupied.")
     else:

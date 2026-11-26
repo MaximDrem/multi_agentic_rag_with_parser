@@ -40,6 +40,7 @@ class FaissIndexer:
             emb = self.model.encode(
                 batch,
                 task="retrieval",
+                prompt_name="document",
                 show_progress_bar=False,
                 convert_to_numpy=True,
                 normalize_embeddings=True,
@@ -69,6 +70,7 @@ class FaissIndexer:
         embedding = self.model.encode(
             [query],
             task="retrieval",
+            prompt_name="query",
             convert_to_numpy=True,
             normalize_embeddings=True,
         )

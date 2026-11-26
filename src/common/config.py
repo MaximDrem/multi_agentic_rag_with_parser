@@ -62,8 +62,8 @@ def create_llm(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": bool(enable_thinking)}}
     if enable_thinking:
-        kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True}}
         return ChatOpenAIReasoning(**kwargs)
     return ChatOpenAI(**kwargs)
 
@@ -76,21 +76,20 @@ ORCHESTRATOR_LLM_TEMPERATURE = float(os.environ["ORCHESTRATOR_LLM_TEMPERATURE"])
 ORCHESTRATOR_LLM_MAX_TOKENS = int(os.environ["ORCHESTRATOR_LLM_MAX_TOKENS"])
 ORCHESTRATOR_ENABLE_THINKING = os.environ["ORCHESTRATOR_ENABLE_THINKING"].lower() == "true"
 
-RETRIEVER_EMB_PORT = int(os.environ["RETRIEVER_EMB_PORT"])
-RETRIEVER_EMB_URL = os.environ["RETRIEVER_EMB_URL"]
 RETRIEVER_EMB_LLM_BASE_URL = os.environ["RETRIEVER_EMB_LLM_BASE_URL"]
 RETRIEVER_EMB_LLM_MODEL = os.environ["RETRIEVER_EMB_LLM_MODEL"]
 RETRIEVER_EMB_LLM_TEMPERATURE = float(os.environ["RETRIEVER_EMB_LLM_TEMPERATURE"])
 RETRIEVER_EMB_LLM_MAX_TOKENS = int(os.environ["RETRIEVER_EMB_LLM_MAX_TOKENS"])
 RETRIEVER_EMB_ENABLE_THINKING = os.environ["RETRIEVER_EMB_ENABLE_THINKING"].lower() == "true"
 
-RETRIEVER_BM25_PORT = int(os.environ["RETRIEVER_BM25_PORT"])
-RETRIEVER_BM25_URL = os.environ["RETRIEVER_BM25_URL"]
 RETRIEVER_BM25_LLM_BASE_URL = os.environ["RETRIEVER_BM25_LLM_BASE_URL"]
 RETRIEVER_BM25_LLM_MODEL = os.environ["RETRIEVER_BM25_LLM_MODEL"]
 RETRIEVER_BM25_LLM_TEMPERATURE = float(os.environ["RETRIEVER_BM25_LLM_TEMPERATURE"])
 RETRIEVER_BM25_LLM_MAX_TOKENS = int(os.environ["RETRIEVER_BM25_LLM_MAX_TOKENS"])
 RETRIEVER_BM25_ENABLE_THINKING = os.environ["RETRIEVER_BM25_ENABLE_THINKING"].lower() == "true"
+
+RETRIEVER_PORT = int(os.environ.get("RETRIEVER_PORT", "8102"))
+RETRIEVER_URL = os.environ.get("RETRIEVER_URL", f"http://localhost:{RETRIEVER_PORT}")
 
 SUMMARIZER_PORT = int(os.environ["SUMMARIZER_PORT"])
 SUMMARIZER_URL = os.environ["SUMMARIZER_URL"]
@@ -108,8 +107,6 @@ CHUNKS_PATH = Path(os.environ["CHUNKS_PATH"])
 FAISS_INDEX_PATH = Path(os.environ["FAISS_INDEX_PATH"])
 BM25_INDEX_PATH = Path(os.environ["BM25_INDEX_PATH"])
 
-EMB_TOP_K = int(os.environ["EMB_TOP_K"])
-BM25_TOP_K = int(os.environ["BM25_TOP_K"])
 SCORE_THRESHOLD = float(os.environ["SCORE_THRESHOLD"])
 
 REQUEST_TIMEOUT = float(os.environ["REQUEST_TIMEOUT"])
@@ -117,10 +114,8 @@ TASK_POLL_INTERVAL = float(os.environ["TASK_POLL_INTERVAL"])
 
 MARKDOWN_DIR = os.environ["MARKDOWN_DIR"]
 
-# ── Baseline RAG (hybrid RRF + rerank) ───────────────
 RERANKER_MODEL = os.environ["RERANKER_MODEL"]
 RERANKER_DEVICE = os.environ["RERANKER_DEVICE"]
 RERANK_TOP_N = int(os.environ["RERANK_TOP_N"])
 HYBRID_CANDIDATES = int(os.environ["HYBRID_CANDIDATES"])
 RRF_K = int(os.environ["RRF_K"])
-BENCHMARK_DIR = Path(os.environ["BENCHMARK_DIR"])

@@ -20,10 +20,10 @@ from a2a.types import (
 )
 
 sys.path.insert(0, __file__.rsplit("/src/", 1)[0] + "/src")
-from common.config import A2A_VERSION, REQUEST_TIMEOUT  # noqa: E402
+from common.config import A2A_VERSION, ORCHESTRATOR_URL, REQUEST_TIMEOUT  # noqa: E402
 
 
-ORCH_URL = "http://localhost:8101"
+ORCH_URL = ORCHESTRATOR_URL
 
 QUERIES = [
     {
