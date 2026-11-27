@@ -1,0 +1,46 @@
+{
+  "agent_id": "agent_01",
+  "document_count": 7,
+  "chunk_count": 1341,
+  "questions_xlsx": "input/vopros-otvety (1).xlsx",
+  "questions_jsonl": "input/questions.jsonl",
+  "chunks": "agents/agent_01/chunks.jsonl",
+  "output_dir": "agents/agent_01/output",
+  "documents": [
+    {
+      "doc_path": "var/markdown_output_clean/Бюджетный кодекс Российской Федерации от 31.07.1998 N145 (ред. 28.12.2025).md",
+      "document_file": "documents/Бюджетный кодекс Российской Федерации от 31.07.1998 N145 (ред. 28.12.2025).md",
+      "chunk_count": 1238
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Глоссарий.md",
+      "document_file": "documents/Глоссарий.md",
+      "chunk_count": 26
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ № 399 01.07.2024.md",
+      "document_file": "documents/Приказ № 399 01.07.2024.md",
+      "chunk_count": 10
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложения_3_1,_3_2_Рабочие_планы_ФП,_РегП_01_07_22 (1).md",
+      "document_file": "documents/Приложения_3_1,_3_2_Рабочие_планы_ФП,_РегП_01_07_22 (1).md",
+      "chunk_count": 23
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Регламент согласования руководителей ВПО РПО от 06.10.2023.md",
+      "document_file": "documents/Регламент согласования руководителей ВПО РПО от 06.10.2023.md",
+      "chunk_count": 15
+    },
+    {
+      "doc_path": "var/markdown_output_clean/УКАЗ №1014.md",
+      "document_file": "documents/УКАЗ №1014.md",
+      "chunk_count": 8
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Указ Президента РФ от 08.11.2021 № 633.md",
+      "document_file": "documents/Указ Президента РФ от 08.11.2021 № 633.md",
+      "chunk_count": 21
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "protocol_version": "npa_mas_component_v1",
+  "base_head": "1d6e10d75ced83368997bba1df4f203395a33b1e",
+  "cleanup_commit": "6c87f4bbc762e22b1c3af31ccad134cde9c23061",
+  "status": "complete",
+  "deleted_paths": [
+    "src/retrieval/agentic.py",
+    "src/retrieval/agentic_service.py",
+    "src/retrieval/coordinated.py",
+    "src/retrieval/dynamic_mas.py",
+    "src/retrieval/multiagent.py",
+    "src/retrieval/multiagent_v2.py",
+    "src/agents/agentic_retriever.py",
+    "src/agents/agentic_retriever_alpha.py",
+    "src/agents/dynamic_mas.py",
+    "src/agents/multiagent_coordinated.py",
+    "src/agents/multiagent_retriever.py",
+    "src/agents/multiagent_retriever_v2.py",
+    "src/scripts/coordinated_experiment/",
+    "src/scripts/run_coordinated_experiment.py",
+    "experiments/coordinated_mechanism_v1.yaml",
+    "tests/coordinated_experiment/",
+    "var/benchmark/final/evaluation/"
+  ],
+  "preserved_untracked_user_files": [
+    "План_перезапуска_MAS_RAG_для_НПА.md",
+    "План_экспериментов_Coordinated_для_кодингового_агента.md"
+  ],
+  "deviations": [
+    "tests/coordinated_experiment was untracked and was removed by the explicit cleanup allowlist rather than git rm.",
+    "var/benchmark/final/evaluation contained tracked derived artifacts; the entire and only evaluation subtree was removed as required.",
+    "The two untracked user-owned protocol documents were inventoried and preserved; they were not staged by cleanup."
+  ],
+  "protected_hashes_before_file": "var/audit/npa_mas_component_v1/protected_before.sha256",
+  "protected_hashes_after_file": "var/audit/npa_mas_component_v1/protected_after.sha256",
+  "protected_hashes_byte_identical": true,
+  "checks": {
+    "legacy_reference_scan": "passed",
+    "compileall_src_and_cli": "passed",
+    "start_agents_shell_syntax": "passed",
+    "generic_script_help": "passed",
+    "e2e_help_without_network": "passed",
+    "bm25_dense_real_read_only_smoke": "passed",
+    "jina_real_read_only_smoke": "passed",
+    "evaluation_absent": true,
+    "git_diff_check": "passed",
+    "regression_tests": "old coordinated tests removed by protocol; new protocol tests not yet created"
+  },
+  "real_smoke": {
+    "query": "Что такое рисковый сценарий?",
+    "base_chunks": 10,
+    "jina_chunks": 10,
+    "dense_device": "cpu",
+    "jina_device": "cpu",
+    "indices_rebuilt": false
+  }
+}

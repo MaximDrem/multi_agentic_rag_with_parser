@@ -1,0 +1,106 @@
+{
+  "agent_id": "agent_02",
+  "document_count": 19,
+  "chunk_count": 1342,
+  "questions_xlsx": "input/vopros-otvety (1).xlsx",
+  "questions_jsonl": "input/questions.jsonl",
+  "chunks": "agents/agent_02/chunks.jsonl",
+  "output_dir": "agents/agent_02/output",
+  "documents": [
+    {
+      "doc_path": "var/markdown_output_clean/Временный Регламент обработки инцедентов от 25.12.2024.md",
+      "document_file": "documents/Временный Регламент обработки инцедентов от 25.12.2024.md",
+      "chunk_count": 62
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Временный_порядок_управления_и_мониторинга_Единого_плана_утв_ДГ (1).md",
+      "document_file": "documents/Временный_порядок_управления_и_мониторинга_Единого_плана_утв_ДГ (1).md",
+      "chunk_count": 44
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Ед. план по достижению нац. целей развития РФ до 2030 года и на перспективу до 2036 года (утв. Правительством РФ).md",
+      "document_file": "documents/Ед. план по достижению нац. целей развития РФ до 2030 года и на перспективу до 2036 года (утв. Правительством РФ).md",
+      "chunk_count": 419
+    },
+    {
+      "doc_path": "var/markdown_output_clean/МР по оценке эффективности РПО от 19.08.2024.md",
+      "document_file": "documents/МР по оценке эффективности РПО от 19.08.2024.md",
+      "chunk_count": 33
+    },
+    {
+      "doc_path": "var/markdown_output_clean/МР по управлению рисками НП, ФП, ВП и РегП 19.09.2024.md",
+      "document_file": "documents/МР по управлению рисками НП, ФП, ВП и РегП 19.09.2024.md",
+      "chunk_count": 26
+    },
+    {
+      "doc_path": "var/markdown_output_clean/ПП РФ от 15.05.2023 N 752 (ред. от 29.04.2025).md",
+      "document_file": "documents/ПП РФ от 15.05.2023 N 752 (ред. от 29.04.2025).md",
+      "chunk_count": 17
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 06.11.2025 № 1752.md",
+      "document_file": "documents/Постановление Правительства РФ от 06.11.2025 № 1752.md",
+      "chunk_count": 84
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 0702.2025 N 118.md",
+      "document_file": "documents/Постановление Правительства РФ от 0702.2025 N 118.md",
+      "chunk_count": 8
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 30_05_2024 N 702.md",
+      "document_file": "documents/Постановление Правительства РФ от 30_05_2024 N 702.md",
+      "chunk_count": 146
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ Минфина России от 14.12.2018 № 270н (1).md",
+      "document_file": "documents/Приказ Минфина России от 14.12.2018 № 270н (1).md",
+      "chunk_count": 105
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ Минфина России от 15.05.2025 N 54н Порядок формирования информации по декомпозированным параметрам.md",
+      "document_file": "documents/Приказ Минфина России от 15.05.2025 N 54н Порядок формирования информации по декомпозированным параметрам.md",
+      "chunk_count": 21
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ № 364 13 июня 2024 г.md",
+      "document_file": "documents/Приказ № 364 13 июня 2024 г.md",
+      "chunk_count": 11
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение 1 (ред. 02.06.2025) (11).md",
+      "document_file": "documents/Приложение 1 (ред. 02.06.2025) (11).md",
+      "chunk_count": 117
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение 2 Порядок применения типов мероприятий (результатов), типов КТ и параметров характеристики ФП, ВП, РегП (ред. от 19.12.2023) (12).md",
+      "document_file": "documents/Приложение 2 Порядок применения типов мероприятий (результатов), типов КТ и параметров характеристики ФП, ВП, РегП (ред. от 19.12.2023) (12).md",
+      "chunk_count": 37
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение 5_Порядок проведения мониторинга национальных проектов, федеральных проектов и ведомственных проектов (ред. от 02.06.2025).md",
+      "document_file": "documents/Приложение 5_Порядок проведения мониторинга национальных проектов, федеральных проектов и ведомственных проектов (ред. от 02.06.2025).md",
+      "chunk_count": 72
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение_3_Порядок_разработки_и_внесения_изменений_в_рабочие_планы ред 01.07.2022 (2).md",
+      "document_file": "documents/Приложение_3_Порядок_разработки_и_внесения_изменений_в_рабочие_планы ред 01.07.2022 (2).md",
+      "chunk_count": 7
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Регламент_обработки_инцидентов_по_ЕП_от_31_10_2025.md",
+      "document_file": "documents/Регламент_обработки_инцидентов_по_ЕП_от_31_10_2025.md",
+      "chunk_count": 35
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Стандарт Новые национальные проекты на период 2025-2030 годов (утв. от 05.06.2024 № ММ-П6-16823).md",
+      "document_file": "documents/Стандарт Новые национальные проекты на период 2025-2030 годов (утв. от 05.06.2024 № ММ-П6-16823).md",
+      "chunk_count": 58
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Стандарт ПК.md",
+      "document_file": "documents/Стандарт ПК.md",
+      "chunk_count": 40
+    }
+  ]
+}

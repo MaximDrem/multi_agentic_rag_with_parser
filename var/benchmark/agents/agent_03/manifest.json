@@ -1,0 +1,111 @@
+{
+  "agent_id": "agent_03",
+  "document_count": 20,
+  "chunk_count": 1341,
+  "questions_xlsx": "input/vopros-otvety (1).xlsx",
+  "questions_jsonl": "input/questions.jsonl",
+  "chunks": "agents/agent_03/chunks.jsonl",
+  "output_dir": "agents/agent_03/output",
+  "documents": [
+    {
+      "doc_path": "var/markdown_output_clean/ГОСТ_Р_71136_2023 Национальный стандарт методики расчета показателя.md",
+      "document_file": "documents/ГОСТ_Р_71136_2023 Национальный стандарт методики расчета показателя.md",
+      "chunk_count": 110
+    },
+    {
+      "doc_path": "var/markdown_output_clean/МР по оценке эффективности работы с рисками 30.09.2024.md",
+      "document_file": "documents/МР по оценке эффективности работы с рисками 30.09.2024.md",
+      "chunk_count": 43
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Методические рекомендации по организации ВПО и РПО от 27.09.2022.md",
+      "document_file": "documents/Методические рекомендации по организации ВПО и РПО от 27.09.2022.md",
+      "chunk_count": 9
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Порядок подготовки, проведения, принятия решений и контроля исполнения решений ПС и НП.md",
+      "document_file": "documents/Порядок подготовки, проведения, принятия решений и контроля исполнения решений ПС и НП.md",
+      "chunk_count": 11
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 05.12.2025 N1990.md",
+      "document_file": "documents/Постановление Правительства РФ от 05.12.2025 N1990.md",
+      "chunk_count": 74
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 26.05.2021 N 786 (ред. от 02.08.2025).md",
+      "document_file": "documents/Постановление Правительства РФ от 26.05.2021 N 786 (ред. от 02.08.2025).md",
+      "chunk_count": 153
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 31.10.2018 № 1288 (ред. 06.11.2025).md",
+      "document_file": "documents/Постановление Правительства РФ от 31.10.2018 № 1288 (ред. 06.11.2025).md",
+      "chunk_count": 207
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства № 1093.md",
+      "document_file": "documents/Постановление Правительства № 1093.md",
+      "chunk_count": 35
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ Минстроя России от 17.03.2025 № 163пр.md",
+      "document_file": "documents/Приказ Минстроя России от 17.03.2025 № 163пр.md",
+      "chunk_count": 131
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение 6 (ред. от 02.06.2025) (7).md",
+      "document_file": "documents/Приложение 6 (ред. от 02.06.2025) (7).md",
+      "chunk_count": 24
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение_7_Порядок_организации_участия_ОМС_ред _01_07_2022.md",
+      "document_file": "documents/Приложение_7_Порядок_организации_участия_ОМС_ред _01_07_2022.md",
+      "chunk_count": 6
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение_8_Порядок_завершения_НП,_ФП,_ВП,_РегП_и_их_отдельных параметров ред 19.12.2023 (1).md",
+      "document_file": "documents/Приложение_8_Порядок_завершения_НП,_ФП,_ВП,_РегП_и_их_отдельных параметров ред 19.12.2023 (1).md",
+      "chunk_count": 21
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение_9_Порядок_проведения_контрольных_мероприятий_ПО_ПРФ_ред 13.07.2023.md",
+      "document_file": "documents/Приложение_9_Порядок_проведения_контрольных_мероприятий_ПО_ПРФ_ред 13.07.2023.md",
+      "chunk_count": 34
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Регламент СВПО от 05.03.2025.md",
+      "document_file": "documents/Регламент СВПО от 05.03.2025.md",
+      "chunk_count": 71
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Регламент_брендирование.md",
+      "document_file": "documents/Регламент_брендирование.md",
+      "chunk_count": 32
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Стандарт Новые национальные проекты на период 2025-2030 годов. Приложение.md",
+      "document_file": "documents/Стандарт Новые национальные проекты на период 2025-2030 годов. Приложение.md",
+      "chunk_count": 175
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Указ Президента РФ от 06.02.2020 № 98 (ред. от 10.10.2024).md",
+      "document_file": "documents/Указ Президента РФ от 06.02.2020 № 98 (ред. от 10.10.2024).md",
+      "chunk_count": 16
+    },
+    {
+      "doc_path": "var/markdown_output_clean/ФЗ - 172 (13.07.2024).md",
+      "document_file": "documents/ФЗ - 172 (13.07.2024).md",
+      "chunk_count": 92
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Федеральный закон от 28_12_2024 N 523-ФЗ.md",
+      "document_file": "documents/Федеральный закон от 28_12_2024 N 523-ФЗ.md",
+      "chunk_count": 57
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Формы паспортов региональных государственных программ.md",
+      "document_file": "documents/Формы паспортов региональных государственных программ.md",
+      "chunk_count": 40
+    }
+  ]
+}

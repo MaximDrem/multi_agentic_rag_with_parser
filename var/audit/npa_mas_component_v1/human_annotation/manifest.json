@@ -1,0 +1,30 @@
+{
+  "protocol_version": "npa_mas_component_v1",
+  "codebook_version": "npa_query_types_v1",
+  "codebook_sha256": "9d14724842a2acbdf3c8c7ce1c0847e8958c088013951b37038efb70610b1c7c",
+  "primary_groups": 556,
+  "secondary_groups": 112,
+  "format": "xlsx_with_data_validation_and_html_codebook",
+  "files": {
+    "00_Начните_здесь.html": {
+      "sha256": "556c4684726f1abd3b3ed3becdb97fd7cd74a3aa75c7eb535d5fbd6fd84c9e5e",
+      "bytes": 32904
+    },
+    "01_Аннотатор_A.xlsx": {
+      "sha256": "70463406dccd669b6e77ae962b95058ced04fe8c9ae36f1f6b4b51e75d762670",
+      "bytes": 90448
+    },
+    "02_Аннотатор_B_независимо.xlsx": {
+      "sha256": "7bb15bb60cf8fa9cce0743c33da83e4c5510bd14d96bb687365f1f3f28fce5d7",
+      "bytes": 30608
+    }
+  },
+  "final_labels_created": false,
+  "human_review_required": true,
+  "validation": {
+    "workbooks_reopened": true,
+    "ids_match_sources": true,
+    "queries_match_sources": true,
+    "control_subset_exact": true
+  }
+}

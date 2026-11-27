@@ -1,0 +1,106 @@
+{
+  "agent_id": "agent_04",
+  "document_count": 19,
+  "chunk_count": 1335,
+  "questions_xlsx": "input/vopros-otvety (1).xlsx",
+  "questions_jsonl": "input/questions.jsonl",
+  "chunks": "agents/agent_04/chunks.jsonl",
+  "output_dir": "agents/agent_04/output",
+  "documents": [
+    {
+      "doc_path": "var/markdown_output_clean/ЕМР (ред. от 02.06.2025).md",
+      "document_file": "documents/ЕМР (ред. от 02.06.2025).md",
+      "chunk_count": 10
+    },
+    {
+      "doc_path": "var/markdown_output_clean/МР УД от 31.05.2025.md",
+      "document_file": "documents/МР УД от 31.05.2025.md",
+      "chunk_count": 118
+    },
+    {
+      "doc_path": "var/markdown_output_clean/МР по оценке эффективности ВПО от 19.08.2024.md",
+      "document_file": "documents/МР по оценке эффективности ВПО от 19.08.2024.md",
+      "chunk_count": 33
+    },
+    {
+      "doc_path": "var/markdown_output_clean/МР_по_разработке_и_реализации_ГП_субъектов_РФ_и_муниципальных_программ (1).md",
+      "document_file": "documents/МР_по_разработке_и_реализации_ГП_субъектов_РФ_и_муниципальных_программ (1).md",
+      "chunk_count": 51
+    },
+    {
+      "doc_path": "var/markdown_output_clean/МЭР № 500 23.03.2025.md",
+      "document_file": "documents/МЭР № 500 23.03.2025.md",
+      "chunk_count": 204
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Перечень структурированной части характеристики мероприятий (результатов) (ред. 19.12.2023).md",
+      "document_file": "documents/Перечень структурированной части характеристики мероприятий (результатов) (ред. 19.12.2023).md",
+      "chunk_count": 22
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 06.10.2025 N 1552 (ред. от 05.12.2025).md",
+      "document_file": "documents/Постановление Правительства РФ от 06.10.2025 N 1552 (ред. от 05.12.2025).md",
+      "chunk_count": 105
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 30.09.2014 N 999 (ред. 26.12.2025).md",
+      "document_file": "documents/Постановление Правительства РФ от 30.09.2014 N 999 (ред. 26.12.2025).md",
+      "chunk_count": 150
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Постановление Правительства РФ от 30.11.2023 N2050 (ред. 26.12.2025).md",
+      "document_file": "documents/Постановление Правительства РФ от 30.11.2023 N2050 (ред. 26.12.2025).md",
+      "chunk_count": 81
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ Минфина России N 48н, Минэкономразвития России N 249 от 14.04.2023.md",
+      "document_file": "documents/Приказ Минфина России N 48н, Минэкономразвития России N 249 от 14.04.2023.md",
+      "chunk_count": 8
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ Минфина России от 14.09.2023 N 145н Об утверждении общих требований к формированию плана по достижению показателей ГП РФ.docx.md",
+      "document_file": "documents/Приказ Минфина России от 14.09.2023 N 145н Об утверждении общих требований к формированию плана по достижению показателей ГП РФ.docx.md",
+      "chunk_count": 57
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ Минфина России от 30.09.2025 N135н.md",
+      "document_file": "documents/Приказ Минфина России от 30.09.2025 N135н.md",
+      "chunk_count": 87
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ Минэкономразвития России от 23.12.2024 N 813.md",
+      "document_file": "documents/Приказ Минэкономразвития России от 23.12.2024 N 813.md",
+      "chunk_count": 59
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приказ Минэкономразвития №722 от 30.11.2021 ( ред. от 26.09.2023).md",
+      "document_file": "documents/Приказ Минэкономразвития №722 от 30.11.2021 ( ред. от 26.09.2023).md",
+      "chunk_count": 24
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Приложение 4_Порядок внесения изменений в национальные проекты, федеральные проекты и ведомственные проекты (ред. от 02.06.2025).md",
+      "document_file": "documents/Приложение 4_Порядок внесения изменений в национальные проекты, федеральные проекты и ведомственные проекты (ред. от 02.06.2025).md",
+      "chunk_count": 201
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Регламент_QR.md",
+      "document_file": "documents/Регламент_QR.md",
+      "chunk_count": 39
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Указ Президента РФ от 07.05.2024 N 309.md",
+      "document_file": "documents/Указ Президента РФ от 07.05.2024 N 309.md",
+      "chunk_count": 19
+    },
+    {
+      "doc_path": "var/markdown_output_clean/Указ Президента РФ от 19.07.2018 N 444 (ред. от 05.06.2025).md",
+      "document_file": "documents/Указ Президента РФ от 19.07.2018 N 444 (ред. от 05.06.2025).md",
+      "chunk_count": 37
+    },
+    {
+      "doc_path": "var/markdown_output_clean/ФЗ от 29.11.2007 № 282-ФЗ.md",
+      "document_file": "documents/ФЗ от 29.11.2007 № 282-ФЗ.md",
+      "chunk_count": 30
+    }
+  ]
+}
