@@ -1,52 +1,58 @@
 import asyncio
 import time
 
-from retrieval.contracts import MAX_OUTPUT_CHUNKS, SearchBudget, chunk_dict
+from retrieval.contracts import MAX_OUTPUT_CHUNKS
 from retrieval.engine import RetrievalEngine
-from retrieval.rrf import weighted_rrf
+from retrieval.npa_mas.pipeline import NpaMasPipeline
 
 
 class BaseRetriever:
-    def __init__(self, engine: RetrievalEngine | None = None):
-        self.engine = engine or RetrievalEngine()
+    variant = "B0_RRF"
+    retriever_name = "base"
+    fusion_name = "rrf"
+
+    def __init__(self, engine: RetrievalEngine | None = None, pipeline: NpaMasPipeline | None = None):
+        self.engine = engine or (pipeline.engine if pipeline is not None else None) or RetrievalEngine()
+        self.pipeline = pipeline or NpaMasPipeline(engine=self.engine)
 
     async def retrieve(self, query: str) -> dict:
-        return await asyncio.to_thread(self._retrieve, query)
-
-    def _candidates(self, query: str):
-        engine = self.engine.with_budget(SearchBudget())
-        dense = engine.search("dense", query, 15)
-        lexical = engine.search("bm25", query, 15)
-        merged = weighted_rrf(
-            [hit.chunk.id for hit in dense],
-            [hit.chunk.id for hit in lexical],
-            alpha=0.5,
-            limit=30,
-        )
-        raw_unique_candidates = len({hit.chunk.id for hit in dense} | {hit.chunk.id for hit in lexical})
-        return engine, merged, raw_unique_candidates
-
-    def _retrieve(self, query: str) -> dict:
         started = time.perf_counter()
-        engine, merged, raw_unique_candidates = self._candidates(query)
+        result = await self.pipeline.run(query, self.variant, query_group=query)
         chunks = []
-        for item in merged[:MAX_OUTPUT_CHUNKS]:
-            chunk = engine.chunk_map[item["chunk_id"]]
-            chunks.append(chunk_dict(chunk, item["rank"], item["score"], answer_aspect=""))
+        for item in result.chunks[:MAX_OUTPUT_CHUNKS]:
+            chunk = self.engine.chunk_map[item.chunk_id]
+            chunks.append({
+                "chunk_id": item.chunk_id,
+                "doc_path": item.doc_path,
+                "title": item.title,
+                "text": item.text,
+                "token_count": chunk.token_count,
+                "score": item.score,
+                "rank": item.rank,
+                "relevance": None,
+                "answer_aspect": "",
+            })
+        pool = result.pool
+        channel_rankings = pool.provenance.get("channel_rankings", {}) if pool else {}
+        raw_unique_candidates = len({chunk_id for ranking in channel_rankings.values() for chunk_id in ranking})
         return {
             "chunks": chunks,
-            "retriever": "base",
-            "fallback_used": False,
-            "error": None,
+            "retriever": self.retriever_name,
+            "fallback_used": result.fallback_used,
+            "error": result.error,
             "trace": {
                 "query": query,
-                "fusion": "rrf",
-                "alpha": 0.5,
+                "fusion": self.fusion_name,
+                "alpha": self.pipeline.config.retrieval.final_alpha_dense,
                 "raw_unique_candidates": raw_unique_candidates,
-                "unique_candidates_post_cap": len(merged),
-                "source_ranks": {item["chunk_id"]: item["source_ranks"] for item in merged[:MAX_OUTPUT_CHUNKS]},
-                "budget": engine.budget.snapshot(),
+                "unique_candidates_post_cap": len(pool.candidates) if pool else 0,
+                "pool_sha256": pool.pool_sha256 if pool else None,
+                "source_ranks": {candidate.chunk_id: candidate.source_ranks for candidate in (pool.candidates[:MAX_OUTPUT_CHUNKS] if pool else [])},
+                "budget": {channel: value.model_dump(mode="json") for channel, value in pool.budget.items()} if pool else {},
             },
             "token_usage": {"total_tokens": 0},
             "latency_ms": int((time.perf_counter() - started) * 1000),
         }
+
+    def _retrieve(self, query: str) -> dict:
+        return asyncio.run(self.retrieve(query))

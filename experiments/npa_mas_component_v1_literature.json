@@ -1,0 +1,220 @@
+{
+  "protocol_version": "npa_mas_component_v1",
+  "accessed_at": "2026-11-27",
+  "scope_note": "Источники обосновывают отдельные архитектурные решения, но не означают дословного воспроизведения чужих систем и не доказывают их эффективность на русском НПА-benchmark.",
+  "sources": [
+    {
+      "source_id": "bm25",
+      "component": "BM25",
+      "title": "The Probabilistic Relevance Framework: BM25 and Beyond",
+      "authors": [
+        "Stephen Robertson",
+        "Hugo Zaragoza"
+      ],
+      "venue": "Foundations and Trends in Information Retrieval",
+      "year": 2009,
+      "doi": "10.1561/1500000019",
+      "url": "https://dl.acm.org/doi/10.1561/1500000019",
+      "accessed_at": "2026-11-27",
+      "publication_status": "journal_article",
+      "architectural_thesis": "BM25 используется как детерминированный lexical retrieval baseline и отдельный канал поиска.",
+      "borrowing_limitation": "BM25 сам по себе не является LLM-агентом; его наличие не обосновывает преимущество многоагентной архитектуры."
+    },
+    {
+      "source_id": "query_rewriting_rag",
+      "component": "Dense semantic rewriting",
+      "title": "Query Rewriting in Retrieval-Augmented Large Language Models",
+      "authors": [
+        "Xinbei Ma",
+        "Yeyun Gong",
+        "Pengcheng He",
+        "Hai Zhao",
+        "Nan Duan"
+      ],
+      "venue": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing",
+      "year": 2023,
+      "doi": "10.18653/v1/2023.emnlp-main.322",
+      "url": "https://aclanthology.org/2023.emnlp-main.322/",
+      "accessed_at": "2026-11-27",
+      "publication_status": "conference_paper",
+      "architectural_thesis": "Query rewriting поддерживает генерацию semantic reformulations для уменьшения lexical gap между запросом и нужными текстами.",
+      "borrowing_limitation": "Обычные paraphrases в core не называются HyDE; результаты на других задачах не переносятся на русский НПА-benchmark без отдельной проверки."
+    },
+    {
+      "source_id": "hyde",
+      "component": "HyDE conceptual background",
+      "title": "Precise Zero-Shot Dense Retrieval without Relevance Labels",
+      "authors": [
+        "Luyu Gao",
+        "Xueguang Ma",
+        "Jimmy Lin",
+        "Jamie Callan"
+      ],
+      "venue": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
+      "year": 2023,
+      "doi": "10.18653/v1/2023.acl-long.99",
+      "url": "https://aclanthology.org/2023.acl-long.99/",
+      "accessed_at": "2026-11-27",
+      "publication_status": "conference_paper",
+      "architectural_thesis": "HyDE служит только концептуальным примером использования generated text как dense query representation.",
+      "borrowing_limitation": "Core не генерирует hypothetical document embedding, поэтому semantic rewrites в нём не являются реализацией HyDE."
+    },
+    {
+      "source_id": "agent4ranking",
+      "component": "Multi-perspective rewriting",
+      "title": "Agent4Ranking: Semantic Robust Ranking via Personalized Query Rewriting Using Multi-Agent LLMs",
+      "authors": [
+        "Xiaopeng Li",
+        "Lixin Su",
+        "Pengyue Jia",
+        "Suqi Cheng",
+        "Junfeng Wang",
+        "Dawei Yin",
+        "Xiangyu Zhao"
+      ],
+      "venue": "ACM Transactions on Information Systems, 43(6)",
+      "year": 2025,
+      "doi": "10.1145/3749099",
+      "url": "https://arxiv.org/abs/2312.15450",
+      "accessed_at": "2026-11-27",
+      "publication_status": "journal_article_with_arxiv_version",
+      "architectural_thesis": "Роли и перспективы рассматриваются как источник различных query rewrites.",
+      "borrowing_limitation": "Demographic personas, Chain-of-Thought и Multi-gate Mixture-of-Experts не переносятся в core; заимствуется только идея различий между переформулировками."
+    },
+    {
+      "source_id": "ma_rag",
+      "component": "Role-specialized sequential MAS",
+      "title": "MA-RAG: Multi-Agent Retrieval-Augmented Generation via Collaborative Chain-of-Thought Reasoning",
+      "authors": [
+        "Thang Nguyen",
+        "Peter Chin",
+        "Yu-Wing Tai"
+      ],
+      "venue": "arXiv",
+      "year": 2025,
+      "doi": "10.48550/arXiv.2505.20096",
+      "url": "https://arxiv.org/abs/2505.20096",
+      "accessed_at": "2026-11-27",
+      "publication_status": "preprint",
+      "preprint_status": "Препринт arXiv:2505.20096; на дату обращения использована версия v2 от 2025-10-11, а наличие рецензируемой публикации не утверждается.",
+      "architectural_thesis": "На уровне подхода заимствуется декомпозиция на planner и специализированные роли с передачей промежуточных сообщений.",
+      "borrowing_limitation": "QA и Extractor roles, обмен chain-of-thought и dynamic planning не копируются; core остаётся фиксированным pipeline с краткими типизированными сообщениями."
+    },
+    {
+      "source_id": "legalmalr",
+      "component": "Legal multi-agent query understanding",
+      "title": "LegalMALR: Multi-Agent Query Understanding and LLM-Based Reranking for Chinese Statute Retrieval",
+      "authors": [
+        "Yunhan Li",
+        "Mingjie Xie",
+        "Gaoli Kang",
+        "Zihan Gong",
+        "Gengshen Wu",
+        "Min Yang"
+      ],
+      "venue": "arXiv",
+      "year": 2026,
+      "doi": "10.48550/arXiv.2601.17692",
+      "url": "https://arxiv.org/abs/2601.17692",
+      "accessed_at": "2026-11-27",
+      "publication_status": "preprint",
+      "preprint_status": "Препринт arXiv:2601.17692, версия v1 от 2026-01-25; наличие рецензируемой публикации на дату обращения не утверждается.",
+      "architectural_thesis": "LegalMALR является близким архитектурным ориентиром для сочетания planner, legal query rewrites и LLM-based reranking.",
+      "borrowing_limitation": "GRPO, iterative dense retrieval и unified policy training не переносятся; не заявляются первенство общей legal MAS-идеи или перенос численных результатов с китайских данных."
+    },
+    {
+      "source_id": "rrf",
+      "component": "Reciprocal Rank Fusion",
+      "title": "Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods",
+      "authors": [
+        "Gordon V. Cormack",
+        "Charles L. A. Clarke",
+        "Stefan Büttcher"
+      ],
+      "venue": "Proceedings of SIGIR 2009, pp. 758–759",
+      "year": 2009,
+      "doi": "10.1145/1571941.1572114",
+      "url": "https://dl.acm.org/doi/10.1145/1571941.1572114",
+      "additional_urls": [
+        "https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf"
+      ],
+      "accessed_at": "2026-11-27",
+      "publication_status": "conference_paper",
+      "architectural_thesis": "RRF задаёт детерминированный hybrid baseline и способ fusion кандидатов из нескольких rankings.",
+      "borrowing_limitation": "Параметры alpha и k не подбираются по итоговому test quality; ссылка не заменяет проверку frozen tie-breaking и budget-инвариантов."
+    },
+    {
+      "source_id": "rankgpt",
+      "component": "LLM relevance ranking",
+      "title": "Is ChatGPT Good at Search? Investigating Large Language Models as Re-Ranking Agents",
+      "authors": [
+        "Weiwei Sun",
+        "Lingyong Yan",
+        "Xinyu Ma",
+        "Shuaiqiang Wang",
+        "Pengjie Ren",
+        "Zhumin Chen",
+        "Dawei Yin",
+        "Zhaochun Ren"
+      ],
+      "venue": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, pp. 14918–14937",
+      "year": 2023,
+      "doi": "10.18653/v1/2023.emnlp-main.923",
+      "url": "https://aclanthology.org/2023.emnlp-main.923/",
+      "accessed_at": "2026-11-27",
+      "publication_status": "conference_paper",
+      "architectural_thesis": "Listwise/permutation ranking мотивирует LLM relevance selector и обязательный контроль влияния исходного порядка кандидатов.",
+      "borrowing_limitation": "Full-permutation selector без sliding-window algorithm не называется точным RankGPT; эффективность на русском НПА отдельно не предполагается."
+    },
+    {
+      "source_id": "rankflow",
+      "component": "Multi-role reranking and ablations",
+      "title": "RankFlow: A Multi-Role Collaborative Reranking Workflow Utilizing Large Language Models",
+      "authors": [
+        "Can Jin",
+        "Hongwu Peng",
+        "Anxiang Zhang",
+        "Nuo Chen",
+        "Jiahui Zhao",
+        "Xi Xie",
+        "Kuangzheng Li",
+        "Shuya Feng",
+        "Kai Zhong",
+        "Caiwen Ding",
+        "Dimitris N. Metaxas"
+      ],
+      "venue": "Companion Proceedings of the ACM on Web Conference 2025",
+      "year": 2025,
+      "doi": "10.1145/3701716.3717575",
+      "url": "https://arxiv.org/abs/2502.00709",
+      "accessed_at": "2026-11-27",
+      "publication_status": "conference_paper_with_arxiv_version",
+      "architectural_thesis": "RankFlow служит методологическим ориентиром для role ablations и cost-aware анализа reranking.",
+      "borrowing_limitation": "Answerer и Summarizer не добавляются только ради внешнего сходства; результаты других IR benchmarks не считаются доказательством для русского НПА."
+    },
+    {
+      "source_id": "stard",
+      "component": "NPA query typology motivation",
+      "title": "STARD: A Chinese Statute Retrieval Dataset Derived from Real-life Queries by Non-professionals",
+      "authors": [
+        "Weihang Su",
+        "Yiran Hu",
+        "Anzhe Xie",
+        "Qingyao Ai",
+        "Quezi Bing",
+        "Ning Zheng",
+        "Yun Liu",
+        "Weixing Shen",
+        "Yiqun Liu"
+      ],
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2024, pp. 10658–10671",
+      "year": 2024,
+      "doi": "10.18653/v1/2024.findings-emnlp.625",
+      "url": "https://aclanthology.org/2024.findings-emnlp.625/",
+      "accessed_at": "2026-11-27",
+      "publication_status": "conference_paper",
+      "architectural_thesis": "Colloquial non-professional queries и lexical gap в statute retrieval мотивируют заранее фиксируемую multi-label типологию запросов.",
+      "borrowing_limitation": "Численные результаты китайского STARD не переносятся на русский benchmark; заимствуется мотивация типологии, а не её готовые labels или выводы."
+    }
+  ]
+}

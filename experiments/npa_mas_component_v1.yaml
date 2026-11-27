@@ -1,0 +1,123 @@
+protocol_version: npa_mas_component_v1
+seed: 20261127
+
+benchmark:
+  root: var/benchmark/final
+  questions: questions.jsonl
+  qrels: qrels.jsonl
+  evidence: evidence.jsonl
+  expected_rows: 630
+  expected_groups: 556
+  expected_answerable_rows: 617
+  expected_answerable_groups: 544
+  expected_rows_without_qrels: 13
+  duplicate_policy: normalized_group_representative_min_source_row
+  group_qrels_policy: union_max_relevance
+
+annotations:
+  codebook: experiments/annotations/npa_query_types_v1.md
+  labels: experiments/annotations/npa_query_types_v1.jsonl
+  primary_independent: experiments/annotations/npa_query_types_v1_human_a.jsonl
+  secondary_independent: experiments/annotations/npa_query_types_v1_human_b.jsonl
+  adjudications: experiments/annotations/npa_query_types_v1_adjudications.jsonl
+  reliability: experiments/annotations/npa_query_types_v1_reliability.json
+  double_annotation_groups: 112
+
+prompts:
+  root: prompts/npa_mas_component_v1
+  single_rewriter: single_rewriter.txt
+  planner: planner.txt
+  bm25_worker: bm25_worker.txt
+  dense_worker: dense_worker.txt
+  worker_report: worker_report.txt
+  llm_selector: llm_selector.txt
+
+retrieval:
+  channels: [bm25, dense]
+  score_threshold_source: frozen_environment
+  baseline_target_raw_hits_per_channel: 30
+  expanded_target_raw_hits_per_channel: 60
+  expanded_original_query_target_raw_hits: 30
+  expanded_each_generated_query_target_raw_hits: 10
+  redistribute_unused_query_budget: false
+  wide_target_raw_hits_per_channel: 60
+  max_generated_queries_per_channel: 3
+  include_original_query: true
+  max_queries_per_channel_including_original: 4
+  max_generated_query_chars: 300
+  pool_size: 30
+  output_chunks: 10
+  rrf_k: 60
+  final_alpha_dense: 0.5
+  tie_break: [score_desc, first_registration_index, chunk_id]
+  allow_cross_channel_compensation: false
+  allow_saturation_backfill: false
+
+selector:
+  text_policy: identical_prefix_for_jina_and_llm
+  text_max_chars: 2000
+  llm_output: full_permutation
+  jina_model_source: RERANKER_MODEL
+  jina_device_source: RERANKER_DEVICE
+
+planner:
+  max_aspects: 4
+
+reports:
+  max_observed_chunks_per_worker: 10
+  text_max_chars: 2000
+  max_gap_items: 4
+
+llm:
+  model_env: NPA_LLM_MODEL
+  base_url_env: NPA_LLM_BASE_URL
+  api_key_env: NPA_LLM_API_KEY
+  temperature: 0
+  timeout_s: 180
+  max_transient_retries: 2
+  json_repair_attempts: 1
+  max_output_tokens:
+    single_rewriter: 1200
+    planner: 800
+    bm25_worker: 800
+    dense_worker: 800
+    worker_report: 1200
+    llm_selector: 2000
+  concurrency: 2
+
+output_policy:
+  primary: complete_with_declared_fallback
+  sensitivity: strict_failure_as_empty
+
+output:
+  root: var/benchmark/final/evaluation/npa_mas_component_v1
+  group_file_pattern: "groups/group_{group_index:04d}.json"
+  serialization: canonical_json
+  atomic_write: tmp_then_rename
+  overwrite_successful_group: false
+
+run:
+  variants: [B0_BM25, B0_DENSE, B0_RRF, B1, B1W, S, M1, M2, M3, M4]
+  adaptive_gates: false
+  reuse_old_evaluation: false
+  group_order: query_group_ascending
+
+statistics:
+  primary_metric: recall@10
+  primary_unit: answerable_unique_query_group
+  bootstrap_iterations: 10000
+  randomization_iterations: 10000
+  confidence_level: 0.95
+  multiplicity: holm
+  confirmatory_contrasts: [M1-S, M2-M1, M3-M2, M4-M3]
+
+stability:
+  groups: 50
+  additional_repeats: 2
+  selection: deterministic_hash_before_quality_results
+
+pilot:
+  groups: 24
+  scoring_enabled: false
+  engineering_only: true
+  selection: deterministic_hash_query_group_seed

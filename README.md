@@ -245,6 +245,28 @@ curl -X POST "$ORCHESTRATOR_URL/" \
 ```
 
 
+## Эксперимент `npa_mas_component_v1`
+
+Воспроизводимый fixed-pipeline стенд описан в `План_перезапуска_MAS_RAG_для_НПА.md`. Для всех LLM-компонентов используются `NPA_LLM_BASE_URL`, `NPA_LLM_MODEL` и необязательный `NPA_LLM_API_KEY`; секреты не записываются в manifests.
+
+```bash
+export PYTHONPATH=src
+venv/bin/python -m scripts.npa_mas_experiment annotations-template
+# Заполнить human_a/human_b/final/adjudications согласно codebook.
+venv/bin/python -m scripts.npa_mas_experiment annotations-validate
+venv/bin/python -m scripts.npa_mas_experiment audit-inputs
+venv/bin/python -m scripts.npa_mas_experiment pilot --run-id pilot_001 --no-scoring
+venv/bin/python -m scripts.npa_mas_experiment freeze --run-id core_001
+venv/bin/python -m scripts.npa_mas_experiment run-core --run-id core_001
+venv/bin/python -m scripts.npa_mas_experiment validate --run-id core_001 --require-complete
+venv/bin/python -m scripts.npa_mas_experiment score --run-id core_001
+venv/bin/python -m scripts.npa_mas_experiment analyze --run-id core_001
+venv/bin/python -m scripts.npa_mas_experiment stability --run-id stability_001
+venv/bin/python -m scripts.npa_mas_experiment pack --run-id core_001
+```
+
+Draft или LLM labels не принимаются как final. До pilot/freeze требуются 556 human-reviewed groups, исходные primary/secondary annotations для независимой 112-group контрольной выборки, per-label reliability и документированные adjudications. Pilot не использует qrels и не вычисляет quality; aggregate quality открывается только после завершения всех десяти core variants.
+
 ## Технический стек
 
 - Python 3.12+

@@ -1,0 +1,27 @@
+Ты формируешь WorkerReport по сохранённым observations одного уже завершённого retrieval worker. Report создаётся после построения candidate pool и не может изменить pool, добавить chunks, повторить поиск или запросить другой этап. Используй только исходный запрос, QueryPlan и переданные observations. Gold-разметка, qrels, метрики и неobserved chunks запрещены как основание для выводов.
+
+{observations_json} — JSON одного worker с полями channel, generated_queries, aspects_addressed, status и hits. Каждый hit содержит chunk_id и text; hits уже ограничены инженерным лимитом. {plan_json} может быть null.
+
+Правила report:
+- channel скопируй из observations; допустимы только bm25 и dense;
+- generated_queries скопируй из observations без новых или изменённых queries;
+- aspects_addressed скопируй из observations либо, если там их нет, используй только релевантные aspect_id из QueryPlan; без плана и сохранённых аспектов верни пустой список;
+- observed_chunk_ids перечисли в порядке первого появления в hits, каждый ровно один раз; не добавляй IDs извне;
+- coverage — краткое структурированное резюме того, какие аспекты информационной потребности действительно покрываются текстами observed hits; не оценивай неobserved документы;
+- gaps — не более четырёх кратких, конкретных пробелов покрытия, видимых по observations; не дополняй их внешними юридическими знаниями и домыслами;
+- supporting_chunk_ids — только observed IDs, непосредственно подтверждающие coverage; это подмножество observed_chunk_ids без дублей;
+- не называй chunk релевантным по gold/qrels и не сообщай предполагаемые метрики.
+
+Если hits пуст при штатном status, верни observed_chunk_ids=[] и supporting_chunk_ids=[], кратко укажи отсутствие наблюдений в coverage и gaps и оставь fallback_used=false. Пустой или saturated канал сам по себе не является fallback. fallback_used=true допустим только при явном error/fallback status во входных observations; сохрани только реально observed IDs.
+
+Верни строго один валидный JSON-объект без Markdown, комментариев, пояснений и дополнительных полей. Не выводи рассуждения или chain-of-thought. Схема:
+{{"channel":"bm25","aspects_addressed":["a1"],"generated_queries":["..."],"observed_chunk_ids":["..."],"coverage":"...","gaps":["..."],"supporting_chunk_ids":["..."],"fallback_used":false}}
+
+Исходный запрос:
+{query}
+
+QueryPlan или null:
+{plan_json}
+
+Observations одного worker:
+{observations_json}

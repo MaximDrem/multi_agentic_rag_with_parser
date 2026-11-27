@@ -2,10 +2,14 @@
 PLAN.md
 venv/
 .data/
-prompts/
+prompts/*
+!prompts/npa_mas_component_v1/
+!prompts/npa_mas_component_v1/*.txt
 var/archive/
 var/logs/
 var/logs_benchmark/
+var/benchmark/final/evaluation/
+var/audit/npa_mas_component_v1/
 var/temp_images/
 *.pyc
 __pycache__/

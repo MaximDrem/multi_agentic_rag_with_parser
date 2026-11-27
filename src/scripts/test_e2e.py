@@ -97,7 +97,7 @@ async def run_query(client: Client, query_text: str) -> list[StreamResponse]:
     return responses
 
 
-async def test_all():
+async def run_all_queries():
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(REQUEST_TIMEOUT),
         headers={"A2A-Version": A2A_VERSION},
@@ -152,7 +152,7 @@ async def test_all():
 
 def main() -> int:
     argparse.ArgumentParser(description=__doc__).parse_args()
-    return asyncio.run(test_all())
+    return asyncio.run(run_all_queries())
 
 
 if __name__ == "__main__":
