@@ -13,12 +13,6 @@ from scripts.score_retrieval import normalize_query, read_jsonl, write_jsonl
 
 RETRIEVER_CARDS = {
     "base": "base_retriever",
-    "agentic": "agentic_retriever",
-    "agentic_alpha": "agentic_retriever_alpha",
-    "multiagent": "multiagent_retriever",
-    "multiagent_v2": "multiagent_retriever_v2",
-    "multiagent_coordinated": "multiagent_coordinated",
-    "dynamic_mas": "dynamic_mas",
     "baseline_reranker": "baseline_reranker",
 }
 

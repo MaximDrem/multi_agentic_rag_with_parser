@@ -23,12 +23,10 @@ Orchestrator ←── LangGraph ReAct
     │               forward_agent_artifacts(agent_name) — переслать артефакты агента
     │               send_text(message) — отправить свой текст
     │               data_from=[...] — явная передача данных между агентами
-    ↕ A2A                ↕ A2A
-Retriever-Embedding      Retriever-BM25
-   (FAISS)                  (BM25)
-   до 5 итераций поиска     до 5 итераций поиска
-    ↕                         ↕
-    └──→ Summarizer ←─────────┘
+    ↕ A2A
+Selected Retriever (base | baseline_reranker)
+    ↕ A2A
+Summarizer
 ```
 
 Агенты регистрируют `supportedInterfaces[].protocolVersion: "1.0"`. Клиент и сервер передают заголовок `A2A-Version: 1.0`. Части Part используют unified oneof (`text | raw | url | data`), строятся через SDK `a2a.helpers.proto_helpers`. Статусы задач: `TASK_STATE_SUBMITTED → TASK_STATE_WORKING → TASK_STATE_COMPLETED/FAILED/REJECTED/CANCELED`.
@@ -67,9 +65,9 @@ Retriever-Embedding      Retriever-BM25
 │   │   ├── chunker.py              # Markdown → chunks
 │   │   ├── faiss_indexer.py        # FAISS IndexFlatIP + Jina v5
 │   │   └── bm25_indexer.py         # BM25Okapi
-│   ├── agents/                     # RAG: агенты
-│   │   ├── retriever_embedding.py  # LangGraph ReAct + FAISS
-│   │   ├── retriever_bm25.py       # LangGraph ReAct + BM25
+│   ├── agents/                     # RAG: тонкие A2A-entrypoints
+│   │   ├── base_retriever.py       # Dense + BM25 + RRF
+│   │   ├── baseline_reranker.py    # RRF + Jina reranking
 │   │   └── summarizer.py           # LLM-генерация ответа
 │   ├── orchestrator/               # RAG: оркестрация
 │   │   ├── orchestrator.py         # ReAct-оркестратор, динамически строит цепочку
@@ -112,19 +110,17 @@ pip install -r requirements.txt
 | `ORCHESTRATOR_LLM_MAX_TOKENS` | Максимум выходных токенов |
 | `ORCHESTRATOR_ENABLE_THINKING` | `true`/`false` — включать reasoning (vLLM thinking) |
 
-### Агенты (Retriever-Embedding, Retriever-BM25, Summarizer)
-
-Для каждого агента `<AGENT>` ∈ `{RETRIEVER_EMB, RETRIEVER_BM25, SUMMARIZER}`:
+### Retrieval и Summarizer
 
 | Переменная | Назначение |
 |-----------|-----------|
-| `<AGENT>_PORT` | Порт сервера |
-| `<AGENT>_URL` | URL сервера |
-| `<AGENT>_LLM_BASE_URL` | vLLM/OpenAI-compatible endpoint |
-| `<AGENT>_LLM_MODEL` | Название модели |
-| `<AGENT>_LLM_TEMPERATURE` | Температура генерации |
-| `<AGENT>_LLM_MAX_TOKENS` | Максимум выходных токенов |
-| `<AGENT>_ENABLE_THINKING` | `true`/`false` |
+| `RETRIEVER_PORT` / `RETRIEVER_URL` | Общий endpoint выбранного retriever |
+| `SUMMARIZER_PORT` / `SUMMARIZER_URL` | Endpoint summarizer |
+| `SUMMARIZER_LLM_BASE_URL` | vLLM/OpenAI-compatible endpoint |
+| `SUMMARIZER_LLM_MODEL` | Название модели |
+| `SUMMARIZER_LLM_TEMPERATURE` | Температура генерации |
+| `SUMMARIZER_LLM_MAX_TOKENS` | Максимум выходных токенов |
+| `SUMMARIZER_ENABLE_THINKING` | `true`/`false` |
 
 ### Индексы и поиск
 
@@ -213,17 +209,17 @@ pip install -r requirements.txt
 
 ### 3. Запуск агентов
 
-Orchestrator + Retriever-Embedding + Retriever-BM25 + Summarizer — каждый независимый FastAPI + uvicorn процесс. Логи в `var/logs/`.
+Orchestrator + один выбранный Retriever (`base` или `baseline_reranker`) + Summarizer — независимые FastAPI + uvicorn процессы. Логи в `var/logs/`.
 
 ### 4. Запрос
 
 Оркестратор через ReAct-агента строит цепочку, сам принимает все решения:
 
 - **Приветствия и мета-вопросы** — `send_text` с прямым ответом
-- **Поисковые запросы** — вызов retriever'ов (FAISS + BM25 параллельно), передача чанков через `data_from`, вызов summarizer, `forward_agent_artifacts`
+- **Поисковые запросы** — вызов выбранного retriever, передача чанков через `data_from`, вызов summarizer, `forward_agent_artifacts`
 - **Многошаговость** — в одном запросе можно отправить несколько результатов подряд (`send_text` → приветствие, `forward_agent_artifacts` → поиск)
-- **Итеративный поиск** — ретриверы делают до 5 попыток с разными формулировками запроса
-- **Контроль качества** — LLM может не вызывать `forward_agent_artifacts` и повторить поиск если результат неудовлетворительный
+- **Retrieval** — `base` выполняет Dense + BM25 и RRF; `baseline_reranker` дополнительно применяет Jina
+- **Контроль качества** — LLM может повторить вызов retriever, если результат неудовлетворительный
 
 Артефакты доставляются через A2A-стриминг (`TaskArtifactUpdateEvent`) — клиент получает каждый ответ сразу, не дожидаясь завершения всей цепочки.
 
@@ -237,7 +233,8 @@ venv/bin/python cli.py
 PYTHONPATH=src venv/bin/python -m parser.parser                        # только парсинг
 PYTHONPATH=src venv/bin/python -m parser.clean_markdown               # только очистка
 PYTHONPATH=src venv/bin/python src/scripts/build_indices.py           # только индексация
-bash src/scripts/start_agents.sh                                      # запуск всех агентов
+bash src/scripts/start_agents.sh base                              # base + summarizer + orchestrator
+bash src/scripts/start_agents.sh baseline_reranker                  # Jina reranker + summarizer + orchestrator
 PYTHONPATH=src venv/bin/python src/scripts/test_e2e.py                # E2E тест
 
 # Прямой A2A-запрос к оркестратору (JSON-RPC v1.0)

@@ -12,11 +12,8 @@ get_env() {
 RETRIEVER_TYPE="${1:-base}"
 case "$RETRIEVER_TYPE" in
   base) MODULE="agents.base_retriever"; NAME="base_retriever" ;;
-  agentic) MODULE="agents.agentic_retriever"; NAME="agentic_retriever" ;;
-  agentic_alpha) MODULE="agents.agentic_retriever_alpha"; NAME="agentic_retriever_alpha" ;;
-  multiagent) MODULE="agents.multiagent_retriever"; NAME="multiagent_retriever" ;;
   baseline_reranker) MODULE="agents.baseline_reranker"; NAME="baseline_reranker" ;;
-  *) echo "Usage: $0 [base|agentic|agentic_alpha|multiagent|baseline_reranker]"; exit 2 ;;
+  *) echo "Usage: $0 [base|baseline_reranker]"; exit 2 ;;
 esac
 
 export PYTHONPATH="./src"

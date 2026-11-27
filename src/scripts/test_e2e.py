@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end test for the A2A multi-agent RAG system using the A2A SDK client (v1.0)."""
 
+import argparse
 import asyncio
 import json
 import sys
@@ -150,6 +151,7 @@ async def test_all():
 
 
 def main() -> int:
+    argparse.ArgumentParser(description=__doc__).parse_args()
     return asyncio.run(test_all())
 
 

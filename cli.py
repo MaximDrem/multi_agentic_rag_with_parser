@@ -27,10 +27,7 @@ from common.config import (
 
 RETRIEVER_SERVICES = {
     "1": ("base", "base_retriever", "agents.base_retriever"),
-    "2": ("agentic", "agentic_retriever", "agents.agentic_retriever"),
-    "3": ("agentic_alpha", "agentic_retriever_alpha", "agents.agentic_retriever_alpha"),
-    "4": ("multiagent", "multiagent_retriever", "agents.multiagent_retriever"),
-    "5": ("baseline_reranker", "baseline_reranker", "agents.baseline_reranker"),
+    "2": ("baseline_reranker", "baseline_reranker", "agents.baseline_reranker"),
 }
 _selected_retriever = os.getenv("RETRIEVER_TYPE", "base")
 
