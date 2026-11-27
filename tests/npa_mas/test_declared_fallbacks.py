@@ -11,14 +11,14 @@ def test_planner_preserves_declared_fallback(gateway, prompts_dir):
     gateway.set_response("planner", QueryPlan(aspects=[], planner_notes="Недостаточно данных", fallback_used=True))
     plan, trace, reason = asyncio.run(PlannerAgent(gateway, PromptLoader(prompts_dir)).plan("запрос"))
     assert plan.fallback_used
-    assert plan.planner_notes == "Недостаточно данных"
+    assert plan.planner_notes == ""
     assert reason == "planner_declared_fallback"
     assert trace.fallback_used
     assert trace.status == "fallback"
     assert trace.events[-1].event == "declared_fallback"
 
 
-def test_worker_preserves_declared_fallback_and_queries(gateway, prompts_dir):
+def test_worker_normalizes_declared_fallback_to_original_only(gateway, prompts_dir):
     gateway.set_response("bm25_worker", WorkerQueries(
         channel="bm25",
         queries=["точный реквизит"],
@@ -27,7 +27,7 @@ def test_worker_preserves_declared_fallback_and_queries(gateway, prompts_dir):
     ))
     queries, trace, reason = asyncio.run(BM25Worker(gateway, PromptLoader(prompts_dir)).generate("запрос"))
     assert queries.fallback_used
-    assert queries.queries == ["точный реквизит"]
+    assert queries.queries == []
     assert reason == "bm25_worker_declared_fallback"
     assert trace.fallback_used
     assert trace.status == "fallback"
@@ -56,7 +56,7 @@ def test_report_preserves_declared_failure(gateway, prompts_dir):
     assert report.fallback_used
     assert report.status == "failed"
     assert report.error == "declared_worker_failure"
-    assert report.observed_chunk_ids == ["chunk-1"]
+    assert report.observed_chunk_ids == []
     assert reason == "declared_worker_failure"
     assert trace.fallback_used
     assert trace.status == "fallback"

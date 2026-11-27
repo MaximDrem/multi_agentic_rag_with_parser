@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -93,6 +96,27 @@ def test_jina_full_permutation_restores_configured_top_n(pool):
     assert reranker.top_n == 15
     assert len(selector.rank("q", pool)) == 10
     assert reranker.top_n == 15
+
+
+def test_lazy_jina_initialization_is_lock_serialized(pool, monkeypatch):
+    constructed = []
+
+    class SlowReranker:
+        top_n = 10
+
+        def __init__(self):
+            time.sleep(0.02)
+            constructed.append(threading.get_ident())
+
+        def rerank(self, query, chunks):
+            return [{"chunk_id": chunk["chunk_id"], "rerank_score": 1.0} for chunk in chunks]
+
+    monkeypatch.setattr("retrieval.reranker.JinaReranker", SlowReranker)
+    selector = JinaSelector()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outputs = list(executor.map(lambda _: selector.rank("q", pool), range(2)))
+    assert len(constructed) == 1
+    assert all(len(output) == 10 for output in outputs)
 
 
 def test_same_pool_guard_detects_text_mismatch(pool):

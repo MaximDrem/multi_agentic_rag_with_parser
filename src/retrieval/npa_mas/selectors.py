@@ -58,10 +58,6 @@ class JinaSelector:
     def rank_full(self, query: str, pool: CandidatePool) -> list[RankedChunk]:
         if not pool.candidates:
             return []
-        if self.reranker is None:
-            from retrieval.reranker import JinaReranker
-
-            self.reranker = JinaReranker()
         payload = [
             {
                 "chunk_id": candidate.chunk_id,
@@ -70,6 +66,10 @@ class JinaSelector:
             for candidate in pool.candidates
         ]
         with self._lock:
+            if self.reranker is None:
+                from retrieval.reranker import JinaReranker
+
+                self.reranker = JinaReranker()
             previous_top_n = getattr(self.reranker, "top_n", None)
             if previous_top_n is not None:
                 self.reranker.top_n = len(payload)

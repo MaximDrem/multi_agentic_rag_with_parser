@@ -84,6 +84,7 @@ class CandidateBuilder:
         }
         ledger = BudgetLedger(targets)
         normalized: dict[Channel, list[str]] = {}
+        raw_generated_queries: dict[Channel, list[str]] = {}
         query_keys: dict[str, list[str]] = {}
         raw_provenance: dict[str, list[dict[str, Any]]] = {}
         channel_rankings: dict[str, list[str]] = {}
@@ -95,6 +96,7 @@ class CandidateBuilder:
         chunks: dict[str, Chunk] = {}
 
         for channel in channels:
+            raw_generated_queries[channel] = list(generated_queries.get(channel, []))
             cleaned, truncated, duplicates, overlong = self._normalize_generated(
                 query,
                 generated_queries.get(channel, []),
@@ -184,22 +186,24 @@ class CandidateBuilder:
             within_channel_details[channel] = within
 
         if tuple(channels) == ("dense", "bm25") or set(channels) == {"dense", "bm25"}:
-            merged = weighted_rrf(
+            full_merged = weighted_rrf(
                 channel_rankings.get("dense", []),
                 channel_rankings.get("bm25", []),
                 alpha=self.settings.final_alpha_dense,
                 k=self.settings.rrf_k,
-                limit=self.settings.pool_size,
+                limit=None,
                 source_order=("dense", "bm25"),
             )
         else:
             channel = channels[0]
-            merged = rrf_merge(
+            full_merged = rrf_merge(
                 {channel: channel_rankings[channel]},
                 k=self.settings.rrf_k,
-                limit=self.settings.pool_size,
+                limit=None,
                 source_order=(channel,),
             )
+
+        merged = full_merged[: self.settings.pool_size]
 
         candidates = []
         for item in merged:
@@ -224,7 +228,11 @@ class CandidateBuilder:
             "raw_hits": raw_provenance,
             "channel_rankings": channel_rankings,
             "within_channel_fusion": within_channel_details,
-            "final_fusion": merged,
+            "final_fusion": full_merged,
+            "final_fusion_after_cap": merged,
+            "pool_size_before_cap": len(full_merged),
+            "pool_size_after_cap": len(merged),
+            "raw_generated_queries": raw_generated_queries,
             "observations": observations,
             "truncated_queries": truncated_queries,
             "duplicate_queries": duplicate_queries,

@@ -147,6 +147,13 @@ def _stage_records(artifact: Mapping[str, Any]) -> list[dict[str, Any]]:
     return records
 
 
+def _raw_stage_calls(artifact: Mapping[str, Any], records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    for key in ("llm_calls", "calls"):
+        if isinstance(artifact.get(key), list):
+            return [dict(record) for record in artifact[key]]
+    return [dict(record) for record in records]
+
+
 def _is_jina_record(record: Mapping[str, Any]) -> bool:
     stage = str(record.get("stage", record.get("component", ""))).casefold()
     model = str(record.get("model", "")).casefold()
@@ -281,13 +288,19 @@ def aggregate_cost_reliability(
     applicable_groups = len(groups) - usage_counts["not_applicable"]
     jina_records = [dict(record) for record in all_records if _is_jina_record(record)]
     stage_latencies = defaultdict(list)
-    for record in all_records:
-        stage = str(record.get("stage", "unspecified"))
-        stage_latencies[stage].append(record.get("stage_latency_ms", record.get("latency_ms")))
-    for _, artifact in groups:
+    phase_latencies = defaultdict(list)
+    attempt_latencies = defaultdict(list)
+    for group, artifact in groups:
+        for call in _raw_stage_calls(artifact, records_by_group[group]):
+            stage = str(call.get("stage", "unspecified"))
+            if call.get("latency_ms") is not None:
+                stage_latencies[stage].append(call["latency_ms"])
         if isinstance(artifact.get("stage_timings_ms"), Mapping):
             for stage, latency in artifact["stage_timings_ms"].items():
-                stage_latencies[str(stage)].append(latency)
+                phase_latencies[str(stage)].append(latency)
+    for record in all_records:
+        if record.get("latency_ms") is not None:
+            attempt_latencies[str(record.get("stage", "unspecified"))].append(record["latency_ms"])
     measured_latencies = [_group_latency(artifact) for _, artifact in groups]
     reconstructed_latencies = [
         artifact.get("reconstructed_full_system_latency_ms", artifact.get("reconstructed_latency_ms"))
@@ -323,7 +336,8 @@ def aggregate_cost_reliability(
     fallbacks = 0
     failures = 0
     repairs = 0
-    retries = 0
+    retry_calls = 0
+    transient_retries_total = 0
     empty_outputs = 0
     short_outputs = 0
     saturated_groups = 0
@@ -341,7 +355,12 @@ def aggregate_cost_reliability(
         fallback_used = bool(artifact.get("fallback_used")) or status == "fallback"
         fallbacks += fallback_used
         failures += status in {"failed", "error"}
-        if artifact.get("fallback_stage"):
+        declared_fallbacks = artifact.get("fallbacks", [])
+        if isinstance(declared_fallbacks, list) and declared_fallbacks:
+            for fallback in declared_fallbacks:
+                if isinstance(fallback, Mapping) and fallback.get("stage"):
+                    fallback_stages[str(fallback["stage"])] += 1
+        elif artifact.get("fallback_stage"):
             fallback_stages[str(artifact["fallback_stage"])] += 1
         try:
             output = deduplicate_ranking(artifact, max_items=10)
@@ -361,13 +380,21 @@ def aggregate_cost_reliability(
         else:
             unique_candidates.append(None)
         group_repaired = status == "success_after_json_repair"
-        for record in records:
-            record_status = str(record.get("status", "success"))
-            stage = str(record.get("stage", "unspecified"))
+        for call in _raw_stage_calls(artifact, records):
+            record_status = str(call.get("status", "success"))
+            stage = str(call.get("stage", "unspecified"))
             stage_statuses[f"{stage}:{record_status}"] += 1
             group_repaired = group_repaired or record_status == "success_after_json_repair"
-            attempt = record.get("attempt", 1)
-            retries += isinstance(attempt, int) and attempt > 1
+            attempts = int(call.get("attempts", 1))
+            call_transient_retries = 0
+            raw_events = call.get("events", [])
+            if isinstance(raw_events, list):
+                for event in raw_events:
+                    event_attempt = int(event.get("attempt", 1)) if isinstance(event, Mapping) else 1
+                    if _event_name(event) in {"timeout", "rate_limit", "provider_error"} and event_attempt < attempts:
+                        call_transient_retries += 1
+            transient_retries_total += call_transient_retries
+            retry_calls += call_transient_retries > 0
         repairs += group_repaired
         all_events.extend(_artifact_events(artifact, records))
     event_counts = Counter(all_events)
@@ -380,7 +407,8 @@ def aggregate_cost_reliability(
         "failure_rate": failures / denominator if denominator else None,
         "repair_groups": repairs,
         "repair_rate": repairs / denominator if denominator else None,
-        "retry_calls": retries,
+        "retry_calls": retry_calls,
+        "transient_retries_total": transient_retries_total,
         "timeout_groups": sum(any(_event_name(event) == "timeout" for event in _artifact_events(artifact, records_by_group[group])) for group, artifact in groups),
         "malformed_json_events": event_counts["malformed_json"],
         "event_counts": dict(sorted(event_counts.items())),
@@ -423,6 +451,8 @@ def aggregate_cost_reliability(
             "accounting": "local_compute_separate_from_llm_api_tokens",
         },
         "stage_latency_ms": {stage: _numeric_summary(values) for stage, values in sorted(stage_latencies.items())},
+        "phase_latency_ms": {stage: _numeric_summary(values) for stage, values in sorted(phase_latencies.items())},
+        "attempt_latency_ms": {stage: _numeric_summary(values) for stage, values in sorted(attempt_latencies.items())},
         "measured_group_latency_ms": _numeric_summary(measured_latencies),
         "target_raw_hits": target,
         "requested_raw_hits": requested,

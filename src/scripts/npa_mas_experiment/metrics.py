@@ -364,16 +364,33 @@ def summarize_candidate_pool(
     intersection = set.intersection(*channel_sets.values()) if channel_sets else set()
     union = set.union(*channel_sets.values()) if channel_sets else set()
     baseline_ids = set(_channel_ranking_ids(baseline_pool)) if baseline_pool is not None else set()
+    duplicate_queries = provenance.get("duplicate_queries", {}) if isinstance(provenance, Mapping) else {}
     generated = pool.get("generated_queries", {})
+    raw_generated = provenance.get("raw_generated_queries", {}) if isinstance(provenance, Mapping) else {}
     generated_counts = {}
     for channel, queries in generated.items():
         if isinstance(queries, Mapping):
             queries = queries.get("queries", queries.get("generated", []))
         cleaned = [str(query).strip() for query in queries if str(query).strip()]
+        raw_queries = raw_generated.get(channel, cleaned) if isinstance(raw_generated, Mapping) else cleaned
+        duplicate_values = duplicate_queries.get(channel, []) if isinstance(duplicate_queries, Mapping) else []
+        recorded = isinstance(raw_generated, Mapping) and channel in raw_generated
+        if recorded:
+            unique_count = len(cleaned)
+            duplicate_count = len(duplicate_values)
+            normalization_removed = len(raw_queries) - len(cleaned)
+            generated_count = len(raw_queries)
+        else:
+            unique_count = len(dict.fromkeys(cleaned))
+            duplicate_count = len(cleaned) - unique_count
+            normalization_removed = 0
+            generated_count = len(cleaned)
         generated_counts[channel] = {
-            "generated": len(cleaned),
-            "unique": len(dict.fromkeys(cleaned)),
-            "duplicates_removed": len(cleaned) - len(dict.fromkeys(cleaned)),
+            "generated": generated_count,
+            "unique": unique_count,
+            "duplicates_removed": duplicate_count,
+            "normalization_removed": normalization_removed,
+            "pre_normalization_recorded": recorded,
         }
     truncated = pool.get("truncated_queries", provenance.get("truncated_queries", 0))
     if isinstance(truncated, Mapping):
@@ -382,7 +399,6 @@ def summarize_candidate_pool(
         truncated_count = len(truncated)
     else:
         truncated_count = int(truncated)
-    duplicate_queries = provenance.get("duplicate_queries", {})
     duplicate_query_count = sum(len(value) for value in duplicate_queries.values()) if isinstance(duplicate_queries, Mapping) else 0
     duplicate_raw_hits = 0
     raw_hits = provenance.get("raw_hits", {}) if isinstance(provenance, Mapping) else {}
@@ -390,10 +406,17 @@ def summarize_candidate_pool(
         for query_rows in raw_hits.values():
             if not isinstance(query_rows, list):
                 continue
+            channel_hit_ids = []
             for query_row in query_rows:
                 hits = query_row.get("hits", []) if isinstance(query_row, Mapping) else []
-                hit_ids = [str(hit["chunk_id"]) for hit in hits if isinstance(hit, Mapping) and "chunk_id" in hit]
-                duplicate_raw_hits += len(hit_ids) - len(set(hit_ids))
+                channel_hit_ids.extend(str(hit["chunk_id"]) for hit in hits if isinstance(hit, Mapping) and "chunk_id" in hit)
+            duplicate_raw_hits += len(channel_hit_ids) - len(set(channel_hit_ids))
+    pool_size_before_cap = pool.get("pool_size_before_cap", pool.get("candidate_count_before_cap"))
+    if pool_size_before_cap is None and isinstance(provenance, Mapping):
+        pool_size_before_cap = provenance.get("pool_size_before_cap")
+    pre_cap_recorded = pool_size_before_cap is not None
+    if pool_size_before_cap is None:
+        pool_size_before_cap = len(candidates)
     result = {
         "query_group": pool.get("query_group"),
         "pool_sha256": pool.get("pool_sha256"),
@@ -414,7 +437,8 @@ def summarize_candidate_pool(
         "duplicates_removed": _sum_named_numbers(pool, {"duplicates_removed", "duplicate_hits_removed"}) + duplicate_raw_hits,
         "duplicate_queries": duplicate_query_count,
         "duplicate_raw_hits": duplicate_raw_hits,
-        "pool_size_before_cap": int(pool.get("pool_size_before_cap", pool.get("candidate_count_before_cap", len(candidates)))),
+        "pool_size_before_cap": int(pool_size_before_cap),
+        "pool_size_before_cap_recorded": pre_cap_recorded,
         "pool_size_after_cap": len(pool_set),
         "provenance": candidate_provenance(pool, relevant_set),
         **_budget_totals(pool.get("budget", {})),

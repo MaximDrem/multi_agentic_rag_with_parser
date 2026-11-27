@@ -237,6 +237,52 @@ def test_pipeline_nested_usage_and_channel_budget_shape():
     assert result["reliability"]["saturated_groups"] == 1
 
 
+def test_repairs_retries_fallback_stages_and_latency_scopes_are_separate():
+    repair = {
+        "stage": "planner",
+        "model": "test-model",
+        "status": "success_after_json_repair",
+        "attempts": 2,
+        "token_usage": [],
+        "events": [{"event": "malformed_json", "attempt": 1}],
+        "latency_ms": 150,
+    }
+    retried = {
+        "stage": "bm25_worker",
+        "model": "test-model",
+        "status": "failed",
+        "attempts": 3,
+        "token_usage": [],
+        "events": [
+            {"event": "timeout", "attempt": 1},
+            {"event": "rate_limit", "attempt": 2},
+            {"event": "provider_error", "attempt": 3},
+        ],
+        "latency_ms": 300,
+    }
+    artifact = {
+        "ranked_chunk_ids": ["a"],
+        "status": "complete_with_fallback",
+        "fallback_used": True,
+        "fallback_stage": "planner",
+        "fallbacks": [{"stage": "planner", "reason": "repair"}, {"stage": "bm25_worker", "reason": "retry"}],
+        "calls": [repair, retried],
+        "stage_timings_ms": {"query_generation": 999},
+        "latency_ms": 450,
+    }
+    result = aggregate_cost_reliability({"g1": artifact})
+    reliability = result["reliability"]
+    assert reliability["repair_groups"] == 1
+    assert reliability["retry_calls"] == 1
+    assert reliability["transient_retries_total"] == 2
+    assert reliability["fallback_stage_groups"] == {"bm25_worker": 1, "planner": 1}
+    cost = result["cost"]
+    assert cost["stage_latency_ms"]["planner"]["mean"] == 150
+    assert cost["stage_latency_ms"]["bm25_worker"]["mean"] == 300
+    assert cost["phase_latency_ms"]["query_generation"]["mean"] == 999
+    assert "planner" not in cost["attempt_latency_ms"]
+
+
 def pool_artifact(ranking, candidates, reports=None):
     return {
         "pool_sha256": candidate_pool_sha256(candidates),

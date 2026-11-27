@@ -110,6 +110,9 @@ def test_valid_synthetic_human_annotations_can_freeze_without_secrets(tmp_path, 
     with pytest.raises(ProtocolError):
         instance._assert_frozen_current("core_001")
     monkeypatch.setenv("NPA_LLM_MODEL", "test-model")
+    monkeypatch.setattr("common.config.SCORE_THRESHOLD", 0.123456)
+    with pytest.raises(ProtocolError):
+        instance._assert_frozen_current("core_001")
     rows[0]["notes"] = "Editorial clarification without a label change"
     write_jsonl(paths["primary_independent"], rows)
     stale = instance._annotation_audit(True)
@@ -134,10 +137,12 @@ def test_quality_independent_group_selection_and_resume_keys():
             ("config_sha256", "a"),
             ("prompt_bundle_sha256", "b"),
             ("annotations_sha256", "c"),
+            ("annotations_bundle_sha256", "e" * 64),
             ("source_code_sha256", {"x": "d"}),
             ("benchmark_hashes", {}),
             ("chunk_index_manifest", {}),
             ("model_manifest", {}),
+            ("retrieval_manifest", {}),
         )
     }
     key = instance._resume_key(manifest, "M2", "group_0000")
@@ -169,10 +174,12 @@ def test_group_artifacts_resume_and_duplicate_row_projection(tmp_path):
         "config_sha256": "a",
         "prompt_bundle_sha256": "b",
         "annotations_sha256": "c",
+        "annotations_bundle_sha256": "e" * 64,
         "source_code_sha256": "d" * 64,
         "benchmark_hashes": {},
         "chunk_index_manifest": {},
         "model_manifest": {},
+        "retrieval_manifest": {},
     }
     groups = instance._load_groups()[:3]
     for group in groups:

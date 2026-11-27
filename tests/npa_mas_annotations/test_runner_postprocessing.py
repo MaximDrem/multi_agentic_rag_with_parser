@@ -98,10 +98,12 @@ def frozen_manifest():
         "config_sha256": "a" * 64,
         "prompt_bundle_sha256": "b" * 64,
         "annotations_sha256": "c" * 64,
+        "annotations_bundle_sha256": "e" * 64,
         "source_code_sha256": "d" * 64,
         "benchmark_hashes": {},
         "chunk_index_manifest": {},
         "model_manifest": {},
+        "retrieval_manifest": {},
         "variants": ["B0_BM25", "B0_DENSE", "B0_RRF", "B1", "B1W", "S", "M1", "M2", "M3", "M4"],
     }
 
@@ -150,6 +152,17 @@ def test_score_analysis_and_stability_integration(tmp_path, monkeypatch):
         "report.md", "trace_examples.md", "limitations.md",
     ):
         assert (instance._run_dir("core_001") / "analysis" / filename).is_file()
+    score_manifest_path = instance._run_dir("core_001") / "scores" / "manifest.json"
+    score_manifest = json.loads(score_manifest_path.read_text())
+    original_scoring_hash = score_manifest["scoring_code_sha256"]
+    score_manifest["scoring_code_sha256"] = "0" * 64
+    score_manifest_path.write_text(json.dumps(score_manifest))
+    with pytest.raises(ProtocolError):
+        instance._assert_scores_fresh("core_001")
+    with pytest.raises(ProtocolError):
+        instance.analyze("core_001")
+    score_manifest["scoring_code_sha256"] = original_scoring_hash
+    score_manifest_path.write_text(json.dumps(score_manifest))
     monkeypatch.setattr(instance, "_assert_frozen_current", lambda run_id: manifest)
     monkeypatch.setattr(instance, "analyze", lambda run_id: {"valid": True})
     stability = asyncio.run(instance.run_stability("stability_001", core_run_id="core_001", concurrency=1))

@@ -257,6 +257,8 @@ class AsyncJsonLLMGateway:
         prompt_tokens = getattr(usage, "prompt_tokens", None)
         completion_tokens = getattr(usage, "completion_tokens", None)
         total_tokens = getattr(usage, "total_tokens", None)
+        if prompt_tokens is None and completion_tokens is None and total_tokens is None:
+            return TokenUsage.missing(stage=stage, model=self.model, latency_ms=latency_ms, attempt=attempt)
         if total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
             total_tokens = prompt_tokens + completion_tokens
         return TokenUsage(

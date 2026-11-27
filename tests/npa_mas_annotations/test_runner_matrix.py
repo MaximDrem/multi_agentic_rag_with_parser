@@ -19,10 +19,12 @@ def manifest():
         "config_sha256": "a",
         "prompt_bundle_sha256": "b",
         "annotations_sha256": "c",
+        "annotations_bundle_sha256": "e" * 64,
         "source_code_sha256": "d" * 64,
         "benchmark_hashes": {},
         "chunk_index_manifest": {},
         "model_manifest": {},
+        "retrieval_manifest": {},
         "variants": ["B0_BM25", "B0_DENSE", "B0_RRF", "B1", "B1W", "S", "M1", "M2", "M3", "M4"],
     }
 

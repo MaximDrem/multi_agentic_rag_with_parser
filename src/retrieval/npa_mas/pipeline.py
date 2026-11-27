@@ -106,6 +106,9 @@ class NpaMasPipeline:
             )
             assert_same_pool(frozen_reference, pool)
             fallbacks.extend(self._inherited_m2_fallbacks(m2_artifact))
+            if pool.has_search_errors:
+                error = "search_error"
+                strict_failed = True
             stage_timings["pool_reuse"] = 0.0
         else:
             generation_started = time.perf_counter()
@@ -371,8 +374,6 @@ class NpaMasPipeline:
             raise SamePoolError("frozen M2 artifact failed schema validation") from exc
         if artifact_query != query or pool.query_group != query_group:
             raise SamePoolError("frozen M2 query/query_group does not match the requested group")
-        if pool.has_search_errors:
-            raise SamePoolError("frozen M2 pool contains search errors")
         reference = pool.model_copy(deep=True)
         working = pool.model_copy(deep=True)
         assert_same_pool(reference, working)

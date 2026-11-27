@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from scripts.npa_mas_experiment.packaging import (
+    ANALYSIS_FILES,
     canonical_relative_path,
     create_results_pack,
     validate_budget_invariants,
@@ -46,6 +47,7 @@ def group_artifact(variant):
     artifact = {
         "query_group": "group_0000",
         "ranked_chunk_ids": ["chunk-a"],
+        "full_ranked_chunk_ids": ["chunk-a"],
         "candidate_pool": {"candidates": [candidate()]},
         "budget": {
             "target_raw_hits": 11,
@@ -103,21 +105,42 @@ def test_complete_hash_and_protected_validation(tmp_path):
     (freeze / "protocol.yaml").write_text("protocol_version: npa_mas_component_v1\n", encoding="utf-8")
     (freeze / "prompt_bundle" / "planner.txt").write_text("planner\n", encoding="utf-8")
     (freeze / "annotations.jsonl").write_text('{"query_group":"group_0000","labels":{}}\n', encoding="utf-8")
+    (freeze / "annotations_codebook.md").write_text("# Codebook\n", encoding="utf-8")
+    (freeze / "annotations_human_a.jsonl").write_text('{"query_group":"group_0000","labels":{}}\n', encoding="utf-8")
+    (freeze / "annotations_human_b.jsonl").write_text('{"query_group":"group_0000","labels":{}}\n', encoding="utf-8")
+    (freeze / "annotations_adjudications.jsonl").write_text("", encoding="utf-8")
+    atomic_write_json(freeze / "annotations_reliability.json", {"valid": True, "control_groups": 1})
+    for name in ("model_manifest.json", "retrieval_manifest.json", "chunk_index_manifest.json", "literature.json"):
+        atomic_write_json(freeze / name, {"recorded": True})
     source_root = tmp_path / "source"
     source_root.mkdir()
     (source_root / "module.py").write_text("value = 1\n", encoding="utf-8")
     source_hashes = {"module.py": sha256_file(source_root / "module.py")}
     atomic_write_json(freeze / "source_code_hashes.json", source_hashes)
+    annotation_files = {
+        "codebook": "annotations_codebook.md",
+        "labels": "annotations.jsonl",
+        "primary_independent": "annotations_human_a.jsonl",
+        "secondary_independent": "annotations_human_b.jsonl",
+        "adjudications": "annotations_adjudications.jsonl",
+        "reliability": "annotations_reliability.json",
+    }
+    annotation_hashes = {key: sha256_file(freeze / filename) for key, filename in annotation_files.items()}
+    atomic_write_json(freeze / "annotations_bundle_hashes.json", annotation_hashes)
+    annotation_bundle_hash = sha256_canonical(annotation_hashes)
+    (freeze / "annotations_bundle_sha256.txt").write_text(annotation_bundle_hash + "\n", encoding="utf-8")
     hashes = {
         "config_sha256": sha256_file(freeze / "protocol.yaml"),
         "prompt_bundle_sha256": sha256_directory(freeze / "prompt_bundle"),
         "source_code_sha256": sha256_canonical(source_hashes),
         "annotations_sha256": sha256_file(freeze / "annotations.jsonl"),
+        "annotations_bundle_sha256": annotation_bundle_hash,
     }
     (freeze / "config_sha256.txt").write_text(hashes["config_sha256"] + "\n", encoding="utf-8")
     (freeze / "prompt_bundle_sha256.txt").write_text(hashes["prompt_bundle_sha256"] + "\n", encoding="utf-8")
     (freeze / "annotations_sha256.txt").write_text(hashes["annotations_sha256"] + "\n", encoding="utf-8")
     atomic_write_json(root / "run_manifest.json", hashes)
+    atomic_write_json(freeze / "freeze_manifest.json", hashes)
     protected = tmp_path / "protected.json"
     atomic_write_json(protected, {"fixed": True})
     atomic_write_json(freeze / "benchmark_hashes_before.json", {"protected.json": sha256_file(protected)})
@@ -212,6 +235,9 @@ def test_failed_none_same_pool_is_validation_error_not_crash(tmp_path):
     artifact.pop("candidate_pool")
     artifact["pool"] = None
     artifact["ranked_chunk_ids"] = []
+    artifact["full_ranked_chunk_ids"] = []
+    artifact["status"] = "failed"
+    artifact["error"] = "search_error"
     atomic_write_json(path, artifact)
     (root / "variants" / "M3" / "run.jsonl").write_text(
         '{"question_id":"row_0001","query_group":"group_0000","ranked_chunk_ids":[]}\n',
@@ -238,6 +264,43 @@ def test_valid_store_id_outside_pool_is_rejected(tmp_path):
     )
     assert not report["valid"]
     assert "unknown_final_id" in {error["code"] for error in report["errors"]}
+
+
+def test_full_ranking_must_be_exact_pool_permutation(tmp_path):
+    root = make_run(tmp_path / "run")
+    path = root / "variants" / "B1" / "groups" / "group_0000.json"
+    artifact = read_json(path)
+    second = {**candidate(), "pool_rank": 2, "chunk_id": "chunk-b"}
+    artifact["candidate_pool"]["candidates"].append(second)
+    artifact["full_ranked_chunk_ids"] = ["chunk-a"]
+    atomic_write_json(path, artifact)
+    report = validate_results_pack(
+        root,
+        expected_counts=COUNTS,
+        valid_chunk_ids={"chunk-a", "chunk-b"},
+        require_complete=False,
+    )
+    assert not report["valid"]
+    assert "invalid_full_permutation" in {error["code"] for error in report["errors"]}
+
+
+def test_declared_failed_empty_selector_output_is_scoreable(tmp_path):
+    root = make_run(tmp_path / "run")
+    path = root / "variants" / "B1" / "groups" / "group_0000.json"
+    artifact = read_json(path)
+    artifact.update({
+        "status": "failed",
+        "error": "jina_error:Timeout",
+        "ranked_chunk_ids": [],
+        "full_ranked_chunk_ids": [],
+    })
+    atomic_write_json(path, artifact)
+    (root / "variants" / "B1" / "run.jsonl").write_text(
+        '{"question_id":"row_0001","query_group":"group_0000","ranked_chunk_ids":[]}\n',
+        encoding="utf-8",
+    )
+    report = validate(root)
+    assert report["valid"], report["errors"]
 
 
 def test_validation_detects_secrets_and_old_snapshots(tmp_path):
@@ -267,6 +330,42 @@ def test_scored_denominator_validation_failure(tmp_path):
     codes = {error["code"] for error in report["errors"]}
     assert "answerable_group_denominator" in codes
     assert "answerable_row_denominator" in codes
+
+
+def test_complete_scored_analysis_inventory_is_accepted(tmp_path):
+    root = make_run(tmp_path / "run")
+    atomic_write_json(root / "scores" / "manifest.json", {"complete": True})
+    for variant in VARIANTS:
+        for score_root in (root / "scores" / variant, root / "scores" / variant / "strict"):
+            atomic_write_json(score_root / "summary.json", {"answerable_unique_queries": 1, "answerable_rows": 1})
+            (score_root / "per_unique_query.jsonl").write_text('{"query_group":"group_0000"}\n', encoding="utf-8")
+            (score_root / "per_query.jsonl").write_text('{"question_id":"row_0001"}\n', encoding="utf-8")
+            (score_root / "all_groups.jsonl").write_text('{"query_group":"group_0000"}\n', encoding="utf-8")
+    analysis = root / "analysis"
+    analysis.mkdir()
+    all_variant_tables = {"core_metrics.csv", "cost.csv", "reliability.csv", "candidate_generation_summary.csv", "output_policy_sensitivity.csv"}
+    for filename in ANALYSIS_FILES:
+        path = analysis / filename
+        if filename in all_variant_tables:
+            path.write_text("variant,value\n" + "".join(f"{variant},0\n" for variant in VARIANTS), encoding="utf-8")
+        elif filename in {"confirmatory_contrasts.csv", "confirmatory_contrasts_strict.csv"}:
+            path.write_text("contrast,value\n" + "".join(f"C{index},0\n" for index in range(1, 5)), encoding="utf-8")
+        elif filename == "stability.csv":
+            path.write_text("variant,value\n" + "".join(f"{variant},0\n" for variant in ("S", "M1", "M2", "M3", "M4")), encoding="utf-8")
+        elif filename.endswith(".csv"):
+            path.write_text("value\n1\n", encoding="utf-8")
+        elif filename.endswith(".json"):
+            atomic_write_json(path, {"complete": True})
+        else:
+            path.write_text("# Evidence\n", encoding="utf-8")
+    report = validate_results_pack(
+        root,
+        expected_counts=COUNTS,
+        valid_chunk_ids={"chunk-a"},
+        require_complete=False,
+        require_scored=True,
+    )
+    assert report["valid"], report["errors"]
 
 
 def test_budget_saturation_and_hash_validation(tmp_path):

@@ -82,6 +82,24 @@ def test_missing_usage_is_not_zero():
     assert usage.total_tokens is None
 
 
+def test_empty_usage_object_is_missing_not_reported():
+    empty = SimpleNamespace(prompt_tokens=None, completion_tokens=None, total_tokens=None)
+    gateway, _ = gateway_for([response('{"lexical_queries":[],"semantic_queries":[]}', usage=empty)])
+    result = asyncio.run(
+        gateway.generate_json(
+            stage="single_rewriter",
+            prompt="q",
+            response_model=SingleRewriterOutput,
+            max_output_tokens=100,
+        )
+    )
+    usage = result.trace.token_usage[0]
+    assert usage.token_usage_status == "missing"
+    assert usage.prompt_tokens is None
+    assert usage.completion_tokens is None
+    assert usage.total_tokens is None
+
+
 def test_two_transient_retries_then_success():
     gateway, completions = gateway_for(
         [asyncio.TimeoutError(), asyncio.TimeoutError(), response('{"lexical_queries":[],"semantic_queries":[]}')]

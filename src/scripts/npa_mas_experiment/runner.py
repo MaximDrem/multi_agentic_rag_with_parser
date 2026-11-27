@@ -176,6 +176,22 @@ class ExperimentRunner:
             for key in ("labels", "primary_independent", "secondary_independent", "adjudications")
         }
 
+    def _annotation_bundle_hashes(self) -> dict[str, str]:
+        paths = self._annotation_paths()
+        files = {
+            "codebook": self._path(self.config["annotations"]["codebook"]),
+            "labels": paths["labels"],
+            "primary_independent": paths["primary_independent"],
+            "secondary_independent": paths["secondary_independent"],
+            "adjudications": paths["adjudications"],
+            "reliability": paths["reliability"],
+        }
+        return {key: sha256_file(path) for key, path in files.items()}
+
+    @staticmethod
+    def _bundle_sha256(hashes: dict[str, str]) -> str:
+        return sha256_bytes(canonical_json(hashes).encode())
+
     def validate_annotation_inputs(self, second_override: Path | None = None, write_reliability: bool = True) -> dict[str, Any]:
         groups = self._load_groups()
         paths = self._annotation_paths()
@@ -274,6 +290,15 @@ class ExperimentRunner:
             self.root / "src" / "retrieval" / "rrf.py",
             self.root / "src" / "retrieval" / "engine.py",
             self.root / "src" / "retrieval" / "reranker.py",
+            self.root / "src" / "retrieval" / "contracts.py",
+            self.root / "src" / "indexing" / "faiss_indexer.py",
+            self.root / "src" / "indexing" / "bm25_indexer.py",
+            self.root / "src" / "indexing" / "lemma_bm25.py",
+            self.root / "src" / "indexing" / "chunker.py",
+            self.root / "src" / "common" / "config.py",
+            self.root / "src" / "common" / "models.py",
+            self.root / "src" / "common" / "chunk_store.py",
+            self.root / "src" / "scripts" / "score_retrieval.py",
         ]
         for directory in (self.root / "src" / "retrieval" / "npa_mas", self.root / "src" / "scripts" / "npa_mas_experiment"):
             if directory.is_dir():
@@ -306,6 +331,40 @@ class ExperimentRunner:
             "max_transient_retries": llm["max_transient_retries"],
             "json_repair_attempts": llm["json_repair_attempts"],
             "max_output_tokens": llm["max_output_tokens"],
+        }
+
+    def _retrieval_manifest(self) -> dict[str, Any]:
+        from importlib.metadata import PackageNotFoundError, version
+
+        import faiss
+        from common.config import RERANKER_DEVICE, RERANKER_MODEL, RERANK_TOP_N, SCORE_THRESHOLD
+
+        packages = {}
+        for distribution in ("sentence-transformers", "transformers", "torch", "numpy", "rank-bm25", "pymorphy3"):
+            try:
+                packages[distribution] = version(distribution)
+            except PackageNotFoundError:
+                packages[distribution] = None
+        return {
+            "embedding_model": "jinaai/jina-embeddings-v5-text-small",
+            "embedding_provider": "sentence-transformers",
+            "embedding_revision": os.environ.get("EMBEDDING_MODEL_REVISION"),
+            "embedding_device": "cpu",
+            "embedding_query_prompt": "query",
+            "embedding_document_prompt": "document",
+            "embedding_normalized": True,
+            "score_threshold": SCORE_THRESHOLD,
+            "bm25_tokenizer": "indexing.lemma_bm25.tokenize_lemma",
+            "bm25_positive_scores_only": True,
+            "reranker_model": RERANKER_MODEL,
+            "reranker_provider": "sentence-transformers-cross-encoder",
+            "reranker_revision": os.environ.get("RERANKER_MODEL_REVISION"),
+            "reranker_device": RERANKER_DEVICE,
+            "reranker_configured_top_n": RERANK_TOP_N,
+            "reranker_protocol_permutation": "full_pool_with_configured_top_n_restored",
+            "faiss_version": getattr(faiss, "__version__", None),
+            "package_versions": packages,
+            "urls_recorded": False,
         }
 
     def audit_inputs(self, require_annotations: bool = True) -> dict[str, Any]:
@@ -342,6 +401,7 @@ class ExperimentRunner:
         annotations = self._annotation_audit(require_annotations)
         if not annotations.get("valid"):
             errors.extend(annotations.get("errors", ["Annotation audit failed"]))
+        annotation_bundle_hashes = self._annotation_bundle_hashes() if annotations.get("valid") and require_annotations else None
         try:
             chunk_index = self._chunk_index_manifest()
             chunk_store = self._chunk_store_audit()
@@ -354,6 +414,11 @@ class ExperimentRunner:
         except Exception as exc:
             model = None
             errors.append(str(exc))
+        try:
+            retrieval_manifest = self._retrieval_manifest()
+        except Exception as exc:
+            retrieval_manifest = None
+            errors.append(f"Retrieval manifest failed: {type(exc).__name__}: {exc}")
         source_hashes = self._source_code_hashes()
         report = {
             "protocol_version": self.config["protocol_version"],
@@ -364,7 +429,10 @@ class ExperimentRunner:
             "chunk_index_manifest": chunk_index,
             "chunk_store": chunk_store,
             "model_manifest": model,
+            "retrieval_manifest": retrieval_manifest,
             "annotations": annotations,
+            "annotations_bundle_hashes": annotation_bundle_hashes,
+            "annotations_bundle_sha256": self._bundle_sha256(annotation_bundle_hashes) if annotation_bundle_hashes else None,
             "config_sha256": sha256_file(self.config_path),
             "prompt_hashes": self._prompt_hashes(),
             "source_code_hashes": source_hashes,
@@ -400,6 +468,7 @@ class ExperimentRunner:
         atomic_json(freeze_dir / "benchmark_hashes_before.json", audit["protected_hashes"])
         atomic_json(freeze_dir / "chunk_index_manifest.json", audit["chunk_index_manifest"])
         atomic_json(freeze_dir / "model_manifest.json", audit["model_manifest"])
+        atomic_json(freeze_dir / "retrieval_manifest.json", audit["retrieval_manifest"])
         literature_path = self.root / "experiments" / "npa_mas_component_v1_literature.json"
         if literature_path.is_file():
             shutil.copy2(literature_path, freeze_dir / "literature.json")
@@ -415,16 +484,21 @@ class ExperimentRunner:
             shutil.copy2(self._path(annotations[source_name]), freeze_dir / target_name)
         annotations_sha256 = sha256_file(self._path(annotations["labels"]))
         (freeze_dir / "annotations_sha256.txt").write_text(annotations_sha256 + "\n", encoding="utf-8")
+        annotations_bundle_sha256 = audit["annotations_bundle_sha256"]
+        atomic_json(freeze_dir / "annotations_bundle_hashes.json", audit["annotations_bundle_hashes"])
+        (freeze_dir / "annotations_bundle_sha256.txt").write_text(annotations_bundle_sha256 + "\n", encoding="utf-8")
         manifest = {
             "protocol_version": self.config["protocol_version"],
             "run_id": run_id,
             "config_sha256": audit["config_sha256"],
             "prompt_bundle_sha256": prompt_bundle_sha256,
             "annotations_sha256": annotations_sha256,
+            "annotations_bundle_sha256": annotations_bundle_sha256,
             "source_code_sha256": audit["source_code_sha256"],
             "benchmark_hashes": audit["protected_hashes"],
             "chunk_index_manifest": audit["chunk_index_manifest"],
             "model_manifest": audit["model_manifest"],
+            "retrieval_manifest": audit["retrieval_manifest"],
             "variants": self.config["run"]["variants"],
             "groups": len(self._load_groups()),
             "engineering_only": False,
@@ -453,10 +527,12 @@ class ExperimentRunner:
             "config_sha256": audit["config_sha256"],
             "prompt_bundle_sha256": self._current_prompt_bundle_sha256(),
             "annotations_sha256": sha256_file(self._path(self.config["annotations"]["labels"])),
+            "annotations_bundle_sha256": self._bundle_sha256(self._annotation_bundle_hashes()),
             "source_code_sha256": audit["source_code_sha256"],
             "benchmark_hashes": audit["protected_hashes"],
             "chunk_index_manifest": audit["chunk_index_manifest"],
             "model_manifest": audit["model_manifest"],
+            "retrieval_manifest": audit["retrieval_manifest"],
         }
         mismatches = [key for key, value in actual.items() if frozen.get(key) != value]
         if mismatches:
@@ -470,9 +546,11 @@ class ExperimentRunner:
             "config_sha256": audit["config_sha256"],
             "prompt_bundle_sha256": self._current_prompt_bundle_sha256(),
             "annotations_sha256": sha256_file(self._path(self.config["annotations"]["labels"])),
+            "annotations_bundle_sha256": self._bundle_sha256(self._annotation_bundle_hashes()),
             "benchmark_hashes": audit["protected_hashes"],
             "chunk_index_manifest": audit["chunk_index_manifest"],
             "model_manifest": audit["model_manifest"],
+            "retrieval_manifest": audit["retrieval_manifest"],
         }
         mismatches = [key for key, value in actual.items() if frozen.get(key) != value]
         if mismatches:
@@ -506,10 +584,12 @@ class ExperimentRunner:
                 "config_sha256",
                 "prompt_bundle_sha256",
                 "annotations_sha256",
+                "annotations_bundle_sha256",
                 "source_code_sha256",
                 "benchmark_hashes",
                 "chunk_index_manifest",
                 "model_manifest",
+                "retrieval_manifest",
             )
         }
         value.update({"variant": variant, "query_group": group_id})
@@ -582,47 +662,63 @@ class ExperimentRunner:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def _finalize_variant(self, run_id: str, variant: str, groups: list[dict[str, Any]], manifest: dict[str, Any]) -> dict[str, Any]:
-        detailed = [self._load_group_result(run_id, variant, group["query_group"]) for group in groups]
         rows = []
         errors = []
-        for group, artifact in zip(groups, detailed, strict=True):
-            ranking = self._ranked_ids(artifact)
-            for question in group["questions"]:
-                rows.append({
-                    "question_id": question["question_id"],
-                    "source_row": question["source_row"],
-                    "query": question["query"],
-                    "query_group": group["query_group"],
-                    "ranked_chunk_ids": ranking,
-                    "fallback_used": bool(artifact.get("fallback_used")),
-                    "strict_failed": bool(artifact.get("strict_failed")),
-                    "error": artifact.get("error"),
-                })
-            if artifact.get("error") or artifact.get("status") == "failed":
-                errors.append({
-                    "query_group": group["query_group"],
-                    "variant": variant,
-                    "error": artifact.get("error", "failed"),
-                })
+        fallback_groups = 0
+        failed_groups = 0
+        detailed_count = 0
         variant_dir = self._variant_dir(run_id, variant)
+        variant_dir.mkdir(parents=True, exist_ok=True)
+        detailed_path = variant_dir / "detailed.jsonl"
+        temporary = detailed_path.with_suffix(".jsonl.tmp")
+        try:
+            with temporary.open("w", encoding="utf-8") as handle:
+                for group in groups:
+                    artifact = self._load_group_result(run_id, variant, group["query_group"])
+                    detailed_count += 1
+                    handle.write(canonical_json(artifact) + "\n")
+                    fallback_groups += bool(artifact.get("fallback_used"))
+                    failed = bool(artifact.get("error")) or artifact.get("status") == "failed"
+                    failed_groups += failed
+                    ranking = self._ranked_ids(artifact)
+                    for question in group["questions"]:
+                        rows.append({
+                            "question_id": question["question_id"],
+                            "source_row": question["source_row"],
+                            "query": question["query"],
+                            "query_group": group["query_group"],
+                            "ranked_chunk_ids": ranking,
+                            "fallback_used": bool(artifact.get("fallback_used")),
+                            "strict_failed": bool(artifact.get("strict_failed")),
+                            "error": artifact.get("error"),
+                        })
+                    if failed:
+                        errors.append({
+                            "query_group": group["query_group"],
+                            "variant": variant,
+                            "error": artifact.get("error", "failed"),
+                        })
+            temporary.replace(detailed_path)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
         write_jsonl(variant_dir / "run.jsonl", rows)
-        write_jsonl(variant_dir / "detailed.jsonl", detailed)
         write_jsonl(variant_dir / "errors.jsonl", errors)
         summary = {
             "protocol_version": self.config["protocol_version"],
             "run_id": run_id,
             "variant": variant,
-            "groups": len(detailed),
+            "groups": detailed_count,
             "rows": len(rows),
             "expected_groups": len(groups),
             "expected_rows": sum(len(group["question_ids"]) for group in groups),
-            "fallback_groups": sum(bool(item.get("fallback_used")) for item in detailed),
-            "failed_groups": sum(bool(item.get("error")) or item.get("status") == "failed" for item in detailed),
+            "fallback_groups": fallback_groups,
+            "failed_groups": failed_groups,
             "config_sha256": manifest["config_sha256"],
             "prompt_bundle_sha256": manifest["prompt_bundle_sha256"],
             "annotations_sha256": manifest["annotations_sha256"],
             "source_code_sha256": manifest["source_code_sha256"],
-            "complete": len(detailed) == len(groups),
+            "complete": detailed_count == len(groups),
         }
         atomic_json(variant_dir / "manifest.json", summary)
         return summary
@@ -879,10 +975,12 @@ class ExperimentRunner:
             "config_sha256": audit["config_sha256"],
             "prompt_bundle_sha256": self._current_prompt_bundle_sha256(),
             "annotations_sha256": sha256_file(self._path(self.config["annotations"]["labels"])),
+            "annotations_bundle_sha256": self._bundle_sha256(self._annotation_bundle_hashes()),
             "source_code_sha256": audit["source_code_sha256"],
             "benchmark_hashes": audit["protected_hashes"],
             "chunk_index_manifest": audit["chunk_index_manifest"],
             "model_manifest": audit["model_manifest"],
+            "retrieval_manifest": audit["retrieval_manifest"],
             "variants": self.config["run"]["variants"],
             "selected_groups": [group["query_group"] for group in groups],
             "selection_override": bool(group_ids),
@@ -997,7 +1095,7 @@ class ExperimentRunner:
             for current_run in (core_run_id, *(f"{run_id}/repeat_{index}" for index in range(1, repeat_count + 1))):
                 values = {}
                 for group in groups:
-                    artifact = copy.deepcopy(self._load_group_result(current_run, variant, group["query_group"]))
+                    artifact = self._slim_artifact(self._load_group_result(current_run, variant, group["query_group"]))
                     artifact["metrics"] = query_metrics(
                         artifact["ranked_chunk_ids"],
                         group["relevant"],
@@ -1097,22 +1195,74 @@ class ExperimentRunner:
             report["chunk_index_valid"] = chunk_index_valid
             report["valid"] = not report["errors"]
             report["error_count"] = len(report["errors"])
+        if require_scored:
+            score_manifest_path = self._run_dir(run_id) / "scores" / "manifest.json"
+            analysis_manifest_path = self._run_dir(run_id) / "analysis" / "manifest.json"
+            score_manifest = json.loads(score_manifest_path.read_text(encoding="utf-8")) if score_manifest_path.is_file() else {}
+            analysis_manifest = json.loads(analysis_manifest_path.read_text(encoding="utf-8")) if analysis_manifest_path.is_file() else {}
+            if score_manifest.get("scoring_code_sha256") != self._scoring_code_sha256():
+                report["errors"].append({
+                    "code": "scoring_code_stale",
+                    "path": "scores/manifest.json",
+                    "message": "Scores must be recomputed with the current scoring code",
+                })
+            if analysis_manifest.get("analysis_code_sha256") != self._analysis_code_sha256():
+                report["errors"].append({
+                    "code": "analysis_code_stale",
+                    "path": "analysis/manifest.json",
+                    "message": "Analysis must be regenerated with the current analysis code",
+                })
+            report["valid"] = not report["errors"]
+            report["error_count"] = len(report["errors"])
         report["run_id"] = run_id
         report["require_complete"] = require_complete
         atomic_json(self._run_dir(run_id) / "validation.json", report)
         return report
 
+    def _scoring_code_hashes(self) -> dict[str, str]:
+        paths = [
+            self.root / "src" / "scripts" / "npa_mas_experiment" / "schema.py",
+            self.root / "src" / "scripts" / "npa_mas_experiment" / "metrics.py",
+            self.root / "src" / "scripts" / "npa_mas_experiment" / "runner.py",
+            self.root / "src" / "scripts" / "score_retrieval.py",
+        ]
+        return {path.relative_to(self.root).as_posix(): sha256_file(path) for path in paths}
+
+    def _analysis_code_hashes(self) -> dict[str, str]:
+        paths = [
+            self.root / "src" / "scripts" / "npa_mas_experiment" / "statistics.py",
+            self.root / "src" / "scripts" / "npa_mas_experiment" / "analysis.py",
+            self.root / "src" / "scripts" / "npa_mas_experiment" / "runner.py",
+        ]
+        return {path.relative_to(self.root).as_posix(): sha256_file(path) for path in paths}
+
+    def _scoring_code_sha256(self) -> str:
+        return self._bundle_sha256(self._scoring_code_hashes())
+
+    def _analysis_code_sha256(self) -> str:
+        return self._bundle_sha256(self._analysis_code_hashes())
+
+    def _assert_scores_fresh(self, run_id: str) -> None:
+        path = self._run_dir(run_id) / "scores" / "manifest.json"
+        if not path.is_file():
+            raise ProtocolError("Scores manifest is missing; run score first")
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        if manifest.get("scoring_code_sha256") != self._scoring_code_sha256():
+            raise ProtocolError("Scoring code changed; rerun score before analyze or pack")
+
     def _compute_scores(self, run_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         from scripts.npa_mas_experiment.metrics import score_variants
 
         groups = self._load_groups()
-        rankings = {
-            variant: {
-                group["query_group"]: self._load_group_result(run_id, variant, group["query_group"])
-                for group in groups
-            }
-            for variant in self.config["run"]["variants"]
-        }
+        rankings = {}
+        for variant in self.config["run"]["variants"]:
+            rankings[variant] = {}
+            for group in groups:
+                artifact = self._load_group_result(run_id, variant, group["query_group"])
+                rankings[variant][group["query_group"]] = {
+                    key: artifact.get(key)
+                    for key in ("ranked_chunk_ids", "status", "fallback_used", "strict_failed", "error")
+                }
         benchmark = self._benchmark()
         valid_ids = self._valid_chunk_ids()
         practical = score_variants(
@@ -1186,6 +1336,8 @@ class ExperimentRunner:
             "primary_policy": "complete_with_declared_fallback",
             "sensitivity_policy": "strict_failure_as_empty",
             "answerable_groups": practical[self.config["run"]["variants"][0]]["summary"]["answerable_unique_queries"],
+            "scoring_code_hashes": self._scoring_code_hashes(),
+            "scoring_code_sha256": self._scoring_code_sha256(),
             "complete": True,
         })
         return {
@@ -1196,11 +1348,24 @@ class ExperimentRunner:
             "strict_sensitivity": {variant: score["unique_query_macro"] for variant, score in strict.items()},
         }
 
+    @staticmethod
+    def _slim_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
+        slim = copy.deepcopy(artifact)
+        slim["chunks"] = []
+        pool = slim.get("pool")
+        if isinstance(pool, dict):
+            for candidate in pool.get("candidates", []):
+                candidate.pop("text", None)
+            provenance = pool.get("provenance")
+            if isinstance(provenance, dict):
+                provenance.pop("observations", None)
+        return slim
+
     def _artifact_map(self, run_id: str) -> dict[str, dict[str, dict[str, Any]]]:
         groups = self._load_groups()
         return {
             variant: {
-                group["query_group"]: copy.deepcopy(self._load_group_result(run_id, variant, group["query_group"]))
+                group["query_group"]: self._slim_artifact(self._load_group_result(run_id, variant, group["query_group"]))
                 for group in groups
             }
             for variant in self.config["run"]["variants"]
@@ -1255,6 +1420,7 @@ class ExperimentRunner:
         raw_validation = self.validate_run(run_id, require_complete=True)
         if not raw_validation["valid"]:
             raise ProtocolError("Raw run is invalid; analysis forbidden")
+        self._assert_scores_fresh(run_id)
         scores = self._load_score_set(run_id)
         strict_scores = self._load_score_set(run_id, "strict")
         artifacts = self._artifact_map(run_id)
@@ -1352,7 +1518,7 @@ class ExperimentRunner:
         t8 = []
         if stability_path.is_file():
             stability_summary = json.loads(stability_path.read_text(encoding="utf-8"))
-            t8 = stability_summary.get("rows", stability_summary.get("variants", []))
+            t8 = stability_summary.get("variants", stability_summary.get("rows", []))
             if isinstance(t8, dict):
                 t8 = [{"variant": key, **value} for key, value in t8.items()]
 
@@ -1429,6 +1595,12 @@ class ExperimentRunner:
         atomic_text(analysis_dir / "trace_examples.md", "# Trace examples\n\n" + "\n".join(f"- {item}" for item in trace_examples) + "\n")
         atomic_text(analysis_dir / "limitations.md", "# Limitations\n\n" + "\n".join(f"- {item}" for item in DEFAULT_LIMITATIONS) + "\n")
         atomic_json(analysis_dir / "tables.json", tables)
+        atomic_json(analysis_dir / "manifest.json", {
+            "analysis_code_hashes": self._analysis_code_hashes(),
+            "analysis_code_sha256": self._analysis_code_sha256(),
+            "scoring_code_sha256": self._scoring_code_sha256(),
+            "complete": True,
+        })
         manifest_path = self._run_dir(run_id) / "run_manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest.update({"analyzed": True, "status": "analyzed"})

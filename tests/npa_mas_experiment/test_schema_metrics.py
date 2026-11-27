@@ -171,7 +171,13 @@ def test_candidate_pool_metrics_and_provenance():
     assert result["channels"]["bm25"]["relevant_unique_contribution"] == ["a"]
     assert result["channels"]["dense"]["relevant_unique_contribution"] == ["c"]
     assert result["new_relevant_count_vs_baseline"] == 0
-    assert result["generated_queries"]["bm25"] == {"generated": 2, "unique": 1, "duplicates_removed": 1}
+    assert result["generated_queries"]["bm25"] == {
+        "generated": 2,
+        "unique": 1,
+        "duplicates_removed": 1,
+        "normalization_removed": 0,
+        "pre_normalization_recorded": False,
+    }
     assert result["requested_raw_hits"] == 11
     assert result["actual_raw_hits"] == 1
     assert result["saturated_ledgers"] == 1

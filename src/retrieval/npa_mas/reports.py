@@ -96,7 +96,7 @@ class WorkerReportGenerator:
             reason = value.error or (
                 "worker_report_declared_failed" if value.status == "failed" else "worker_report_declared_fallback"
             )
-            return value, mark_fallback(result.trace, reason, event="declared_fallback"), reason
+            return self._fallback(channel, reason), mark_fallback(result.trace, reason, event="declared_fallback"), reason
         return value, result.trace, None
 
     @staticmethod

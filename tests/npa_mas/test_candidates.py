@@ -26,6 +26,10 @@ def test_original_plus_three_unique_generated_queries_and_fixed_budgets(backend)
         assert pool.budget[channel].requested_raw_hits == 60
         assert pool.budget[channel].actual_raw_hits == 60
     assert len(pool.candidates) <= 30
+    assert pool.provenance["raw_generated_queries"]["dense"] == generated
+    assert pool.provenance["pool_size_before_cap"] > 30
+    assert pool.provenance["pool_size_after_cap"] == len(pool.candidates) == 30
+    assert len(pool.provenance["final_fusion"]) == pool.provenance["pool_size_before_cap"]
     assert len(pool.candidate_ids) == len(set(pool.candidate_ids))
 
 

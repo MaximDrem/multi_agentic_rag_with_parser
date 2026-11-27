@@ -131,6 +131,24 @@ def test_worker_failure_compensates_neither_queries_nor_budget(backend, gateway,
     assert result.fallback_used
 
 
+def test_declared_worker_fallback_is_original_only_in_pipeline(backend, gateway, jina, prompts_dir):
+    gateway.set_response("bm25_worker", {
+        "channel": "bm25",
+        "queries": ["запрещённый дополнительный запрос"],
+        "aspects_addressed": [],
+        "fallback_used": True,
+    })
+    pipeline = make_pipeline(backend, gateway, jina, prompts_dir)
+    result = run(pipeline, "M1")
+    bm25_calls = [call for call in backend.calls if call[0] == "bm25"]
+    assert len(bm25_calls) == 1
+    assert bm25_calls[0][2] == 30
+    assert result.pool.budget["bm25"].requested_raw_hits == 30
+    assert result.worker_queries["bm25"].queries == []
+    assert result.fallback_used
+    assert all("запрещённый" not in call[1] for call in bm25_calls)
+
+
 def test_llm_selector_failure_uses_rrf_pool_order(backend, gateway, jina, prompts_dir):
     pipeline = make_pipeline(backend, gateway, jina, prompts_dir)
     m2 = run(pipeline, "M2")
@@ -183,6 +201,24 @@ def test_search_failure_is_not_faked_as_successful_fallback(backend, gateway, ji
     assert not result.fallback_used
     assert result.ranked_chunk_ids == []
     assert result.error == "search_error"
+
+
+def test_m2_search_failure_preserves_pool_for_failed_m3_m4(backend, gateway, jina, prompts_dir):
+    backend.failures["dense", "Что регулирует статья 5?"] = "index unavailable"
+    pipeline = make_pipeline(backend, gateway, jina, prompts_dir)
+    m2 = run(pipeline, "M2")
+    assert m2.status == "failed"
+    assert m2.pool is not None
+    for variant in ("M3", "M4"):
+        gateway.calls.clear()
+        result = run(pipeline, variant, m2_artifact=m2)
+        assert result.status == "failed"
+        assert result.strict_failed
+        assert result.error == "search_error"
+        assert result.ranked_chunk_ids == []
+        assert result.full_ranked_chunk_ids == []
+        assert result.pool.pool_sha256 == m2.pool.pool_sha256
+        assert gateway.calls == []
 
 
 def test_mismatched_frozen_artifact_is_protocol_error(backend, gateway, jina, prompts_dir):

@@ -22,6 +22,7 @@ from .schema import (
     read_jsonl,
     read_yaml,
     scan_artifact,
+    sha256_canonical,
     sha256_directory,
     sha256_file,
 )
@@ -31,12 +32,43 @@ HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 ANALYSIS_FILES = (
     "core_metrics.csv",
     "candidate_generation.csv",
+    "candidate_generation_summary.csv",
     "confirmatory_contrasts.csv",
+    "confirmatory_contrasts_strict.csv",
+    "practical_comparisons.csv",
     "same_pool_ranking.csv",
+    "same_pool_ranking_summary.csv",
     "subgroup_effects.csv",
+    "subgroup_metrics.csv",
     "cost.csv",
     "reliability.csv",
+    "output_policy_sensitivity.csv",
+    "stability.csv",
+    "trace_examples.md",
+    "limitations.md",
+    "manifest.json",
+    "tables.json",
     "report.md",
+)
+
+FROZEN_ANNOTATION_FILES = {
+    "codebook": "annotations_codebook.md",
+    "labels": "annotations.jsonl",
+    "primary_independent": "annotations_human_a.jsonl",
+    "secondary_independent": "annotations_human_b.jsonl",
+    "adjudications": "annotations_adjudications.jsonl",
+    "reliability": "annotations_reliability.json",
+}
+
+COMPLETE_FREEZE_FILES = (
+    "freeze_manifest.json",
+    "model_manifest.json",
+    "retrieval_manifest.json",
+    "chunk_index_manifest.json",
+    "annotations_bundle_hashes.json",
+    "annotations_bundle_sha256.txt",
+    "literature.json",
+    *FROZEN_ANNOTATION_FILES.values(),
 )
 
 
@@ -178,11 +210,16 @@ def _validate_freeze_hashes(
     source_root: Path | None,
     expected_hashes: Mapping[str, str] | None,
     errors: list[dict[str, str]],
+    require_complete: bool = False,
 ) -> None:
     freeze = root / "freeze"
     if not freeze.is_dir():
         errors.append(_issue("freeze_missing", "freeze", "Freeze directory is missing"))
         return
+    if require_complete:
+        for name in COMPLETE_FREEZE_FILES:
+            if not (freeze / name).is_file():
+                errors.append(_issue("freeze_file_missing", f"freeze/{name}", "Required freeze evidence is missing"))
     protocol = freeze / "protocol.yaml"
     if not protocol.is_file():
         errors.append(_issue("config_missing", "freeze/protocol.yaml", "Frozen config is missing"))
@@ -214,6 +251,7 @@ def _validate_freeze_hashes(
         recorded = _read_hash_text(freeze / "annotations_sha256.txt")
         if recorded != annotations_hash:
             errors.append(_issue("annotations_hash_mismatch", "freeze/annotations_sha256.txt", "Annotations hash mismatch"))
+    source_hashes = None
     source_hashes_path = freeze / "source_code_hashes.json"
     if not source_hashes_path.is_file():
         errors.append(_issue("source_hashes_missing", "freeze/source_code_hashes.json", "Source hashes are missing"))
@@ -233,6 +271,7 @@ def _validate_freeze_hashes(
                     source_path = source_root / str(name)
                     if not source_path.is_file() or sha256_file(source_path) != digest:
                         errors.append(_issue("source_hash_mismatch", str(name), "Source file hash mismatch"))
+    source_aggregate = sha256_canonical(source_hashes) if isinstance(source_hashes, Mapping) and source_hashes else None
     run_manifest_path = root / "run_manifest.json"
     if not run_manifest_path.is_file():
         errors.append(_issue("run_manifest_missing", "run_manifest.json", "Run manifest is missing"))
@@ -250,8 +289,38 @@ def _validate_freeze_hashes(
             errors.append(_issue("manifest_hash_missing", "run_manifest.json", f"Missing {field}"))
         elif digest is not None and declared != digest:
             errors.append(_issue("manifest_hash_mismatch", "run_manifest.json", f"Mismatching {field}"))
-    if _declared_hash(run_manifest, "source_code_sha256") is None:
+    declared_source = _declared_hash(run_manifest, "source_code_sha256")
+    if declared_source is None:
         errors.append(_issue("manifest_hash_missing", "run_manifest.json", "Missing source_code_sha256"))
+    elif source_aggregate is not None and declared_source != source_aggregate:
+        errors.append(_issue("source_aggregate_mismatch", "run_manifest.json", "source_code_sha256 does not match per-file source hashes"))
+    if require_complete:
+        bundle_hashes = {}
+        for logical_name, filename in FROZEN_ANNOTATION_FILES.items():
+            path = freeze / filename
+            if path.is_file():
+                bundle_hashes[logical_name] = sha256_file(path)
+        if len(bundle_hashes) == len(FROZEN_ANNOTATION_FILES):
+            recorded_bundle = read_json(freeze / "annotations_bundle_hashes.json") if (freeze / "annotations_bundle_hashes.json").is_file() else {}
+            if recorded_bundle != bundle_hashes:
+                errors.append(_issue("annotations_bundle_file_mismatch", "freeze/annotations_bundle_hashes.json", "Frozen annotation files differ from their bundle hashes"))
+            bundle_hash = sha256_canonical(bundle_hashes)
+            if _read_hash_text(freeze / "annotations_bundle_sha256.txt") != bundle_hash:
+                errors.append(_issue("annotations_bundle_hash_mismatch", "freeze/annotations_bundle_sha256.txt", "Annotation bundle hash mismatch"))
+            if _declared_hash(run_manifest, "annotations_bundle_sha256") != bundle_hash:
+                errors.append(_issue("annotations_bundle_manifest_mismatch", "run_manifest.json", "Run manifest has a different annotation bundle"))
+        freeze_manifest_path = freeze / "freeze_manifest.json"
+        freeze_manifest = read_json(freeze_manifest_path) if freeze_manifest_path.is_file() else {}
+        for field in (*HASH_FIELDS, "annotations_bundle_sha256"):
+            if freeze_manifest.get(field) != run_manifest.get(field):
+                errors.append(_issue("freeze_manifest_mismatch", "freeze/freeze_manifest.json", f"Freeze and run manifests differ for {field}"))
+        reliability_path = freeze / "annotations_reliability.json"
+        if reliability_path.is_file() and not read_json(reliability_path).get("valid"):
+            errors.append(_issue("annotation_reliability_invalid", "freeze/annotations_reliability.json", "Human annotation reliability is not valid"))
+        for name in ("model_manifest.json", "retrieval_manifest.json", "chunk_index_manifest.json"):
+            path = freeze / name
+            if path.is_file() and not isinstance(read_json(path), Mapping):
+                errors.append(_issue("execution_manifest_invalid", f"freeze/{name}", "Execution manifest must be a JSON object"))
     for field, expected in (expected_hashes or {}).items():
         declared = _declared_hash(run_manifest, field)
         if declared != expected:
@@ -279,6 +348,8 @@ def _validate_scores(
     counts: Mapping[str, int],
     errors: list[dict[str, str]],
 ) -> None:
+    if not (root / "scores" / "manifest.json").is_file():
+        errors.append(_issue("score_manifest_missing", "scores/manifest.json", "Scoring manifest is missing"))
     for variant in variants:
         score_root = root / "scores" / variant
         summary_path = score_root / "summary.json"
@@ -297,6 +368,21 @@ def _validate_scores(
         per_row_path = score_root / "per_query.jsonl"
         if not per_row_path.is_file() or len(read_jsonl(per_row_path)) != counts["answerable_rows"]:
             errors.append(_issue("score_row_rows", f"scores/{variant}/per_query.jsonl", "Incorrect scored row rows"))
+        all_groups_path = score_root / "all_groups.jsonl"
+        if not all_groups_path.is_file() or len(read_jsonl(all_groups_path)) != counts["groups_total"]:
+            errors.append(_issue("score_all_group_rows", f"scores/{variant}/all_groups.jsonl", "all_groups must include answerable and no-GT rows"))
+        strict_root = score_root / "strict"
+        strict_summary_path = strict_root / "summary.json"
+        if not strict_summary_path.is_file():
+            errors.append(_issue("strict_score_summary_missing", f"scores/{variant}/strict/summary.json", "Strict score summary is missing"))
+        else:
+            strict_summary = read_json(strict_summary_path)
+            if strict_summary.get("answerable_unique_queries", strict_summary.get("answerable_groups")) != counts["answerable_groups"] or strict_summary.get("answerable_rows") != counts["answerable_rows"]:
+                errors.append(_issue("strict_score_denominator", f"scores/{variant}/strict/summary.json", "Strict sensitivity has incorrect denominators"))
+        for filename, expected in (("per_unique_query.jsonl", counts["answerable_groups"]), ("per_query.jsonl", counts["answerable_rows"]), ("all_groups.jsonl", counts["groups_total"])):
+            path = strict_root / filename
+            if not path.is_file() or len(read_jsonl(path)) != expected:
+                errors.append(_issue("strict_score_rows", f"scores/{variant}/strict/{filename}", "Strict sensitivity row coverage is incomplete"))
     for filename in ANALYSIS_FILES:
         path = root / "analysis" / filename
         if not path.is_file():
@@ -307,12 +393,14 @@ def _validate_scores(
             if not rows:
                 errors.append(_issue("analysis_table_empty", f"analysis/{filename}", "Required analysis table is empty"))
                 continue
-            if filename in {"core_metrics.csv", "cost.csv", "reliability.csv"}:
+            if filename in {"core_metrics.csv", "cost.csv", "reliability.csv", "candidate_generation_summary.csv", "output_policy_sensitivity.csv"}:
                 variants_in_table = {row.get("variant") for row in rows}
                 if variants_in_table != set(VARIANTS):
                     errors.append(_issue("analysis_variant_coverage", f"analysis/{filename}", "Analysis table must cover all ten variants"))
-            if filename == "confirmatory_contrasts.csv" and {row.get("contrast") for row in rows} != {"C1", "C2", "C3", "C4"}:
+            if filename in {"confirmatory_contrasts.csv", "confirmatory_contrasts_strict.csv"} and {row.get("contrast") for row in rows} != {"C1", "C2", "C3", "C4"}:
                 errors.append(_issue("analysis_contrast_coverage", f"analysis/{filename}", "Confirmatory table must contain C1-C4"))
+            if filename == "stability.csv" and {row.get("variant") for row in rows} != {"S", "M1", "M2", "M3", "M4"}:
+                errors.append(_issue("stability_analysis_coverage", "analysis/stability.csv", "Stability table must cover S, M1, M2, M3 and M4"))
 
 
 def validate_results_pack(
@@ -437,6 +525,20 @@ def validate_results_pack(
                     pool_ids = {str(candidate["chunk_id"]) for candidate in pool["candidates"]}
                     if set(group_ranking) - pool_ids:
                         errors.append(_issue("unknown_final_id", relative, "Final IDs are outside the candidate pool"))
+                    full_ranking = artifact.get("full_ranked_chunk_ids")
+                    declared_failed = artifact.get("status") == "failed" and bool(artifact.get("error"))
+                    failed_empty = declared_failed and full_ranking == [] and not group_ranking
+                    if not failed_empty:
+                        valid_full = (
+                            isinstance(full_ranking, list)
+                            and all(isinstance(chunk_id, str) and chunk_id for chunk_id in full_ranking)
+                            and len(full_ranking) == len(pool["candidates"])
+                            and len(set(full_ranking)) == len(full_ranking)
+                            and set(full_ranking) == pool_ids
+                            and group_ranking == full_ranking[:10]
+                        )
+                        if not valid_full:
+                            errors.append(_issue("invalid_full_permutation", relative, "Full ranking must be an exact pool permutation, except declared failed empty outputs"))
                 if group in run_by_group and run_by_group[group] != group_ranking:
                     errors.append(_issue("group_run_ranking_mismatch", relative, "Group and projected rankings differ"))
             except (ValueError, KeyError, TypeError):
@@ -478,7 +580,17 @@ def validate_results_pack(
             source_root=Path(source_root) if source_root is not None else None,
             expected_hashes=expected_hashes,
             errors=errors,
+            require_complete=require_complete,
         )
+        if require_complete:
+            for filename in ("annotations.jsonl", "annotations_human_a.jsonl"):
+                path = run_root / "freeze" / filename
+                if not path.is_file() or len(read_jsonl(path)) != counts["groups_total"]:
+                    errors.append(_issue("annotation_group_coverage", f"freeze/{filename}", "Final and primary annotations must cover every group"))
+            secondary_path = run_root / "freeze" / "annotations_human_b.jsonl"
+            expected_secondary = int((config_mapping.get("annotations") or {}).get("double_annotation_groups", min(112, counts["groups_total"])))
+            if not secondary_path.is_file() or len(read_jsonl(secondary_path)) != expected_secondary:
+                errors.append(_issue("annotation_control_coverage", "freeze/annotations_human_b.jsonl", "Independent secondary annotations have incorrect control coverage"))
     before = protected_hashes
     if before is None and (run_root / "freeze" / "benchmark_hashes_before.json").is_file():
         before = run_root / "freeze" / "benchmark_hashes_before.json"

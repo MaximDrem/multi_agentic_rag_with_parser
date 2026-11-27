@@ -16,8 +16,11 @@ class BaseRetriever:
         self.pipeline = pipeline or NpaMasPipeline(engine=self.engine)
 
     async def retrieve(self, query: str) -> dict:
+        return await asyncio.to_thread(self._retrieve_sync, query)
+
+    def _retrieve_sync(self, query: str) -> dict:
         started = time.perf_counter()
-        result = await self.pipeline.run(query, self.variant, query_group=query)
+        result = asyncio.run(self.pipeline.run(query, self.variant, query_group=query))
         chunks = []
         for item in result.chunks[:MAX_OUTPUT_CHUNKS]:
             chunk = self.engine.chunk_map[item.chunk_id]
@@ -55,4 +58,4 @@ class BaseRetriever:
         }
 
     def _retrieve(self, query: str) -> dict:
-        return asyncio.run(self.retrieve(query))
+        return self._retrieve_sync(query)

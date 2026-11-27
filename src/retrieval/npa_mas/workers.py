@@ -102,7 +102,7 @@ class SpecializedWorker:
         value = result.value
         if value.fallback_used:
             reason = f"{self.stage}_declared_fallback"
-            return value, mark_fallback(result.trace, reason, event="declared_fallback"), reason
+            return self._fallback(), mark_fallback(result.trace, reason, event="declared_fallback"), reason
         return value, result.trace, None
 
     def _fallback(self) -> WorkerQueries:
